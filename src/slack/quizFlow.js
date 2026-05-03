@@ -17,6 +17,13 @@ const pendingReplies = new Map();
 // Holds graded free-text results waiting for confidence tap: `${quizId}:${questionId}` → state
 const pendingFreeTextConfidence = new Map();
 
+// Callbacks invoked when a quiz completes: quizId → async fn(quiz)
+const quizCompletionCallbacks = new Map();
+
+export function registerQuizCompletion(quizId, cb) {
+  quizCompletionCallbacks.set(quizId, cb);
+}
+
 function quizKey(quizId) {
   return `quiz:${quizId}`;
 }
@@ -240,6 +247,12 @@ async function completeQuiz(client, quiz) {
 
   await client.chat.postMessage({ channel: quiz.slackChannelId, text });
 
+  const cb = quizCompletionCallbacks.get(quiz.quizId);
+  if (cb) {
+    quizCompletionCallbacks.delete(quiz.quizId);
+    await cb(quiz);
+  }
+
   const historyEntry = {
     quizId: quiz.quizId,
     trigger: quiz.trigger,
@@ -323,6 +336,7 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
 
   await saveQuiz(quiz);
   await postQuestion(client, quiz, 0);
+  return quiz;
 }
 
 export function registerQuizHandlers() {
