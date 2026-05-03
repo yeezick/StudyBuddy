@@ -21,6 +21,9 @@ features:
     - command: /brief
       description: Active session, next review due, last quiz score
       should_escape: false
+    - command: /quizcancel
+      description: Cancel the current in-progress quiz
+      should_escape: false
 oauth_config:
   scopes:
     bot:
