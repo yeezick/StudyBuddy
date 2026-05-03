@@ -1,0 +1,41 @@
+display_information:
+  name: StudyAgent
+  description: AI study partner — quizzes, spaced retrieval, study sessions in Slack
+  background_color: "#1f2937"
+features:
+  bot_user:
+    display_name: StudyAgent
+    always_online: true
+  slash_commands:
+    - command: /quizinit
+      description: Generate a quiz on a module, lesson, or free-form topic
+      usage_hint: 'module "Module 2" | lesson "L3" | "explain RAG failure modes"'
+      should_escape: false
+    - command: /focus
+      description: Manage a study session (start | end)
+      usage_hint: 'start 3h "Module 2" | end'
+      should_escape: false
+    - command: /mastery
+      description: Show your mastery snapshot across all modules
+      should_escape: false
+    - command: /brief
+      description: Active session, next review due, last quiz score
+      should_escape: false
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - commands
+      - im:history
+      - im:read
+      - im:write
+      - users:read
+settings:
+  event_subscriptions:
+    bot_events:
+      - message.im
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

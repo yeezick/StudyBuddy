@@ -1,0 +1,314 @@
+[
+  {
+    "id": "m1-c01",
+    "name": "AI Outcome-Focused Definition",
+    "summary": "AI is any system designed to perform tasks that mimic human intelligence. The PM-relevant framing focuses on outcomes — whether a system can understand language, recognize patterns, make decisions, or generate content — not on whether it qualifies as 'true AI' philosophically. What matters is whether the capability solves a real user problem.",
+    "scope": { "course": "Maven AI PM", "module": "Module 1", "lesson": "L1: Introduction" },
+    "tags": ["LLMs as Prediction Engines", "PM as Orchestrator of Intelligence"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m1-c02",
+    "name": "AI Family Tree",
+    "summary": "AI evolved through five generations: Rule-Based AI (hardcoded if/then, breaks on messy reality), Machine Learning (learns patterns from examples, struggles with nuance), Neural Networks (interconnected weighted nodes, pattern recognition), Deep Learning (stacked layers, great for images and audio but struggled with language), and LLMs (attention-based multi-layered, probabilistic, prone to hallucination). Each generation solved the prior one's limitation.",
+    "scope": { "course": "Maven AI PM", "module": "Module 1", "lesson": "L1: Introduction" },
+    "tags": ["LLMs as Prediction Engines", "Transformer Architecture and Attention Mechanism"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m1-c03",
+    "name": "LLMs as Prediction Engines",
+    "summary": "LLMs do not know things — they predict the most probable next token based on statistical patterns. Fluent does not equal factual. Input goes in, pattern matching produces parameters, output is generated text token by token. The model does not understand meaning — it predicts what comes next based on learned patterns. Critical PM implication: plausible output can be entirely wrong.",
+    "scope": { "course": "Maven AI PM", "module": "Module 1", "lesson": "L1: Introduction" },
+    "tags": ["AI Family Tree", "Deterministic vs. Probabilistic Systems", "8 LLM Constraints"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m1-c04",
+    "name": "IPO Framework",
+    "summary": "Every LLM interaction follows Input (prompt + system prompt + RAG context + conversation history), Process (pattern matching through parameters — it calculates probabilities, does not think), and Output (generated text token by token). When AI products produce bad results, IPO pinpoints which stage is the source. Quality in determines quality out.",
+    "scope": { "course": "Maven AI PM", "module": "Module 1", "lesson": "L1: Introduction" },
+    "tags": ["LLMs as Prediction Engines", "6 Levers of AI PM", "System Prompts and Instructions Lever"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m1-c05",
+    "name": "Three Convergence Forces",
+    "summary": "LLMs emerged when three forces converged simultaneously: Deep Learning Advances (Transformer architecture introduced attention — processes in parallel and volume, not sequentially), Access to Big Data (internet-scale batch training), and Computer Advances (GPUs to handle complex processing, far cheaper). All three were required — none was sufficient alone. These forces continue to fuel LLM capability and capacity.",
+    "scope": { "course": "Maven AI PM", "module": "Module 1", "lesson": "L1: Introduction" },
+    "tags": ["AI Family Tree", "Transformer Architecture and Attention Mechanism"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m1-c06",
+    "name": "Transformer Architecture and Attention Mechanism",
+    "summary": "Introduced in the 2017 paper 'Attention Is All You Need,' the Transformer processes text in parallel with an attention mechanism that lets any word influence the interpretation of any other word regardless of distance. This broke the sequential word-by-word limitation of prior models, enabling both faster training and far better context understanding. The architectural breakthrough that made LLMs possible.",
+    "scope": { "course": "Maven AI PM", "module": "Module 1", "lesson": "L1: Introduction" },
+    "tags": ["Three Convergence Forces", "LLMs as Prediction Engines", "Tokenization"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m1-c07",
+    "name": "Four Dimensions of AI Disruption",
+    "summary": "AI disrupts four dimensions simultaneously. Market: time to scale has collapsed — differentiation erodes faster, entry barriers fall, Chegg lost 93% of value, BuzzFeed 69%, Shutterstock 48%. Business: scale is no longer proportional to headcount — major user growth, fewer people required, smaller teams can operate at enterprise scale. Product: AI disrupts what should be built and how — basic features commoditize instantly. User: from doing to done — Creation to Generation, Manual to Automated, Generic to Personalized, Complex to Simple, Visualization to Insight.",
+    "scope": { "course": "Maven AI PM", "module": "Module 1", "lesson": "L2: AI Impact Map" },
+    "tags": ["PM as Orchestrator of Intelligence", "AI Outcome-Focused Definition"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m1-c08",
+    "name": "How AI Transforms Product Work",
+    "summary": "AI transforms PM work across three dimensions: Accelerating how we work (same work, quicker turnaround), Expanding the problem space (impossible problems now solvable), and Expanding the solution space (new and quantitative ways to solve). Core PM work — Activities, Artifacts, Outcomes — is accelerated by AI, but AI is a tool for execution; accelerating process is not a differentiator. Three solution types AI enables: Generative Solutions (dynamically generate output instead of displaying data), Autonomous Agents (take goals and execute workflows independently), and Adaptive Systems (continuously reshape rules to serve user needs).",
+    "scope": { "course": "Maven AI PM", "module": "Module 1", "lesson": "L3: How AI Transforms Product Work" },
+    "tags": ["PM as Orchestrator of Intelligence", "AI Product Archetypes", "Four Dimensions of AI Disruption"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m1-c09",
+    "name": "Three Problem Categories AI Unlocks",
+    "summary": "Before AI, many problems were unavailable, too complex, or too slow. AI unlocks three categories: Simple Problems (tasks requiring human judgment at impossible volumes), Complexity Problems (multi-variable decisions with too many factors to process), and Speed Problems (decisions needed faster than humans can make them). The PM role is no longer just solving problems within constraints — it is deciding which constraints to eliminate. AI is not just about solving known problems; it creates entirely new solutions previously not possible.",
+    "scope": { "course": "Maven AI PM", "module": "Module 1", "lesson": "L3: How AI Transforms Product Work" },
+    "tags": ["How AI Transforms Product Work", "PM as Orchestrator of Intelligence"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m1-c10",
+    "name": "Deterministic vs. Probabilistic Systems",
+    "summary": "Traditional software is deterministic: 2+2=4, same input always produces same output. AI is probabilistic: same input can produce different outputs — N+ factors. Variability is not a problem to eliminate, it is a behavior to shape. The PM role is to coordinate, train, and augment LLMs into reliable outputs. Think of LLMs as raw material — the PM shapes it into a polished product. This changes specs from 'output must be X' to 'output must be within this quality range measured by these criteria.'",
+    "scope": { "course": "Maven AI PM", "module": "Module 1", "lesson": "L4: The PM as Orchestrator of Intelligence" },
+    "tags": ["LLMs as Prediction Engines", "8 LLM Constraints", "PM as Orchestrator of Intelligence"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m1-c11",
+    "name": "8 LLM Constraints",
+    "summary": "Six model-intrinsic constraints: Hallucinations (plausible, confident, and false information — most dangerous), Knowledge Cutoff (no access to real-time or recent info), Context Limits (finite memory, finite concentration), Inconsistency (different outputs from identical inputs), Reasoning Gaps (struggles with planning and multi-step logic over long sequences), Safety Risks (harmful or biased output). Two extrinsic/operational: Cost and Latency (expensive or slow at scale), Model Drift (output changes as model/version/policy updates).",
+    "scope": { "course": "Maven AI PM", "module": "Module 1", "lesson": "L4: The PM as Orchestrator of Intelligence" },
+    "tags": ["6 Levers of AI PM", "LLMs as Prediction Engines", "Deterministic vs. Probabilistic Systems"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m1-c12",
+    "name": "6 Levers of AI PM",
+    "summary": "Six levers let PMs shape AI behavior against the 8 constraints. From notes: Instructions (how to behave — prompts, guidelines, personas), Knowledge (what to know — RAG, document stores), Memory (what to remember — conversation history, content, preferences, session state), Tools (what to do — functions, APIs, integrations), Reasoning (how to think — workflows, structured reasoning, planning/decomposition), Post-Training (how to improve — fine-tuning, RLHF). The shift: from 'what should we build?' to 'how should AI behave?' Think of LLMs as raw material; levers shape it.",
+    "scope": { "course": "Maven AI PM", "module": "Module 1", "lesson": "L4: The PM as Orchestrator of Intelligence" },
+    "tags": ["8 LLM Constraints", "PM as Orchestrator of Intelligence", "System Prompts and Instructions Lever", "RAG Architecture"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m1-c13",
+    "name": "PM as Orchestrator of Intelligence",
+    "summary": "The PM role has fundamentally shifted: from deciding what to build to deciding how AI should behave. The PM coordinates, trains, and augments LLMs into reliable outputs. The mental model: Understand LLMs and their limitations → Apply (Discovery, Design) → Drive Value (Develop, Deploy, iterate). The question shifts from 'what should we build?' to 'how should AI behave?' PMs must shift their lens accordingly.",
+    "scope": { "course": "Maven AI PM", "module": "Module 1", "lesson": "L4: The PM as Orchestrator of Intelligence" },
+    "tags": ["6 Levers of AI PM", "Deterministic vs. Probabilistic Systems", "Intelligence Feasibility"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m1-c14",
+    "name": "AI Product Archetypes",
+    "summary": "Three AI product archetypes by complexity: Single-Layer (AI leveraged through prompt engineering only — no tools, no knowledge, no tuning; instructions only), Multi-Layer (adds Instructions + Knowledge + Memory — can ground responses in proprietary data and remember context), and Agentic (all layers plus Tools — can take actions, call APIs, execute workflows independently). How to build with AI: Discovery (identify high-value AI use cases), Design (define workflow, prototype), Develop (build, test, refine), Deploy (measure, evaluate, monitor, improve).",
+    "scope": { "course": "Maven AI PM", "module": "Module 1", "lesson": "L4: The PM as Orchestrator of Intelligence" },
+    "tags": ["6 Levers of AI PM", "How AI Transforms Product Work", "Intelligence Feasibility"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c01",
+    "name": "Intelligence Feasibility",
+    "summary": "A new PM responsibility: validating whether AI can actually perform a task well enough to ship before committing engineering resources. With LLMs, PMs can prototype with prompts and test whether an AI approach works before a single line of production code is written. During Discovery, PMs now simultaneously validate that users want a solution AND that AI can deliver one. This is a significant expansion of the PM role.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L1: Why Technical Literacy Matters" },
+    "tags": ["Five Types of Product Risk", "PM as Orchestrator of Intelligence"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c02",
+    "name": "Five Types of Product Risk",
+    "summary": "Every AI product must be evaluated against five risks: Value Risk (will users want it — PM, traditional), Usability Risk (can users figure it out — Design and PM), Viability Risk (does the business model work — PM and Business), Intelligence Feasibility (can the AI perform this task well enough — PM, new), and Production Feasibility (can engineering build and scale it — Engineering). Intelligence feasibility is the new addition that belongs to the PM.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L1: Why Technical Literacy Matters" },
+    "tags": ["Intelligence Feasibility", "PM as Orchestrator of Intelligence"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c03",
+    "name": "Three LLM Build Phases",
+    "summary": "LLMs are built in three phases: Data Preparation (train model on chunks; data quality and currency matter; training data always has model data gaps that can be resolved using RAG with additional relevant context), Pre-Training (parameters and size determine capability; more parameters = more capability, more cost and latency; model develops emergent capabilities; the model builds on predicting next token — it learns patterns, not facts), and Post-Training (instruction tuning teaches the model to follow directions; RLHF uses reward-based output learning to improve responses; safety training teaches the model to decline harmful requests).",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L2: How LLMs Are Built" },
+    "tags": ["Tokenization", "Parameters and Weights", "Two LLM Training Phases"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c04",
+    "name": "Two LLM Training Phases",
+    "summary": "Pre-training: the model processes massive internet text unsupervised, learning to predict the next token. Produces broad knowledge but unrefined behavior — may hallucinate, ignore instructions. Post-training (RLHF and instruction tuning): human trainers provide examples and rate outputs. Produces aligned, helpful, safe behavior. Pre-training gives knowledge; post-training gives behavior. When diagnosing product issues: is the model lacking knowledge (pre-training gap) or not following instructions well (post-training issue)?",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L2: How LLMs Are Built" },
+    "tags": ["Tokenization", "LLMs as Prediction Engines", "Parameters and Weights"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c05",
+    "name": "Tokenization",
+    "summary": "LLMs process tokens (word fragments averaging 3-4 characters), not whole words. Tokens are the fundamental unit of LLM economics: API pricing is measured in tokens, context windows are measured in tokens, and latency scales with tokens. Product decisions about response length, context size, and cost projections are all decisions about tokens.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L2: How LLMs Are Built" },
+    "tags": ["Context Window", "Two LLM Training Phases", "8 LLM Constraints"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c06",
+    "name": "Parameters and Weights",
+    "summary": "Billions of learned numerical values encoding a model's knowledge from pre-training. More parameters = more capability, more cost, more latency. Parameters are fixed after training — not updated at inference. Understanding this helps PMs distinguish what a model knows from its weights (fixed) versus what it can look up dynamically via RAG (current, updatable). Emergent capabilities — additional advanced abilities — can develop as models scale in parameter count.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L2: How LLMs Are Built" },
+    "tags": ["Two LLM Training Phases", "Embeddings", "8 LLM Constraints"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c07",
+    "name": "Context Window",
+    "summary": "The maximum amount of text in tokens a model can process in a single interaction. Includes the system prompt, user message, RAG context, conversation history, and response. Exceeding the context window causes information loss. Context window size is a key model differentiator and directly constrains product architecture — how much history, RAG context, and response length are possible.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L2: How LLMs Are Built" },
+    "tags": ["Tokenization", "RAG Architecture", "8 LLM Constraints"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c08",
+    "name": "AI Logic Layer vs Application Layer",
+    "summary": "The production environment has two distinct layers. The Application Layer is the visible boundary — what can the AI do in the UI or app. The AI Logic Layer lives beneath it and is made up of the Transformer model, AI prompts, and the 6 levers — it shapes behavior (what happens) and defines what is possible. The system prompt lives in the AI Logic Layer and sets persistent instructions before any user interaction. This distinction matters because PMs must design both what users see and what the AI is actually capable of doing beneath it.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L3: Instructions — How LLMs Behave" },
+    "tags": ["System Prompts and Instructions Lever", "6 Levers of AI PM", "AI Product Archetypes"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c09",
+    "name": "System Prompts and Instructions Lever",
+    "summary": "The system prompt defines AI persona, sets preset instructions before any interaction, and contains logic for rules, constraints, and behavioral signals. Without one: unpredictable outputs, no consistency. With one: controlled baseline behavior, consistent persona, enforced formats, and guardrails. Confidently draws wrong answers is a failure mode the system prompt addresses. The prompt lives on the problem — it is where the AI's behavioral space is defined. Think like a sculptor: what is the model brought to the chisel?",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L3: Instructions — How LLMs Behave" },
+    "tags": ["6 Levers of AI PM", "IPO Framework", "AI Logic Layer vs Application Layer"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c10",
+    "name": "System Prompt Design Principles",
+    "summary": "Six principles for effective system prompts: (1) It's a behavioral specification — define what the AI does, not what it is. (2) Every line sets a goal — no filler. (3) Optimize trade-offs between what the model is for and what it avoids. (4) Order matters — most important instructions come first. (5) Good learning means sudden failure — first version is always wrong, iterate. (6) First version is always wrong — prototyping is mandatory. Five design steps: Start with the job (what should the AI do in 3 sentences), Define boundaries (roles, behavior, constraints), Shape the experience (tone, style, format), Handle edge cases (outside happy path, rejection rules), Finish by example (few-shot calibration).",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L3: Instructions — How LLMs Behave" },
+    "tags": ["System Prompts and Instructions Lever", "AI Logic Layer vs Application Layer"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c11",
+    "name": "Model Configuration Parameters",
+    "summary": "Key parameters that control model output behavior: Temperature (Low = creativity controlled, deterministic; High = creative, variable), Top P (probability cutoff — lower returns only high-probability words, higher accepts unusual words), Top K (limits token candidates — low = only most expected words, high = accepts even unusual ones), Max Tokens (how many tokens can be generated in output — limits response length, cutting factor when too low), and Stop Sequences (tokens that signal the model to stop generating). These are product decisions that trade off between predictability and creativity.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L3: Instructions — How LLMs Behave" },
+    "tags": ["System Prompts and Instructions Lever", "Tokenization", "Deterministic vs. Probabilistic Systems"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c12",
+    "name": "Model Landscape and Selection",
+    "summary": "Frontier Models: higher capability, higher cost, slower — but capable for most use cases. Open-Source: content (a primary advantage), faster, fewer apps available, invest in infrastructure. Closed-Source: slower, higher cost. Model Selection criteria: (1) Capability — generating? remaining capable? multi-modal input? foundational in volume? (2) Latency — time to first token output, throughput in tokens per second, need for private model? (3) Extensibility — situation flexibility, foundational in volume. (4) Data Sensitivity — is the model backed on your data? private model needed?",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L3: Instructions — How LLMs Behave" },
+    "tags": ["Parameters and Weights", "TTFT and Throughput", "8 LLM Constraints"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c13",
+    "name": "TTFT and Throughput",
+    "summary": "Time-to-first-token (TTFT) is how long users wait before seeing the first word — a critical UX metric. Users perceive 500ms TTFT very differently from 3-second TTFT even if total response time is similar. Throughput is tokens per second after the first token — the perceived typing speed of the AI. Both are product decisions traded off against model capability and cost. Part of model selection: latency = time to finish token output, throughput = tokens per second, private model needed?",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L3: Instructions — How LLMs Behave" },
+    "tags": ["Tokenization", "8 LLM Constraints", "Model Landscape and Selection"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c14",
+    "name": "Three Knowledge Approaches",
+    "summary": "Three ways to give AI knowledge beyond its training: Prompt Stuffing (limit knowledge into the prompt directly — simple but constrained by context window, does not scale), Fine-Tuning (train model on specifics — rows, tables, expressions; expensive, hard to update, knowledge becomes non-traceable), RAG (dynamically fetch knowledge on-time — the recommended approach). More products fail on bad architecture than on bad model choices. RAG wins because it is dynamic, accurate (only using data you need), auditable (trace back source knowledge), and composable (pull from multiple sources and combine).",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L3: Knowledge — What Your AI Should Know Pt.1" },
+    "tags": ["RAG Architecture", "Context Window", "6 Levers of AI PM"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c15",
+    "name": "RAG Architecture",
+    "summary": "Retrieval Augmented Generation: five-step flow: Put indexed base knowledge (ingestion pipeline), Retrieve base knowledge, AI retrieves, AI augments (continues relevant knowledge with our prompt — the RAG pipeline), AI generates (response generated in context). Instructions and RAG are interdependent — the system prompt tells the model how to use retrieved context. Start with product-maturity: Naive RAG (retrieve/read pipeline — proof of concept, no optimization), Advanced RAG (optimize at every step — query rewrite, improved retrieval, ranking/filtering — production optimization), Modular RAG (specialized swappable components, each module individually optimized — scale and sophistication).",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L3: Knowledge — What Your AI Should Know Pt.1" },
+    "tags": ["Three Knowledge Approaches", "RAG Ingestion Pipeline", "RAG Failure Modes", "Embeddings"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c16",
+    "name": "The Knowledge Layer",
+    "summary": "Where does AI knowledge come from? Internal sources (cognitive input, proprietary data), External sources (web, blogs, public databases), and User-generated (user data, history, uploads — key for personalization). Data formats affect retrieval quality: Structured (high retrieval quality), Unstructured (depends on parsing), Semi-Structured like CSV (depends on function), Knowledge Graphs (rich relational context). Knowledge currency matters: domain knowledge changes over time, regulatory guidelines update, sensitive data must not be outdated, freshness requirements vary by business need. Access Control should be built in, especially for enterprise applications.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L3: Knowledge — What Your AI Should Know Pt.1" },
+    "tags": ["RAG Architecture", "Knowledge Quality and Curation", "Three Knowledge Approaches"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c17",
+    "name": "Knowledge Quality and Curation",
+    "summary": "Source credibility matters: RAG cannot decode or will merge wrong context if sources are low quality. Completeness gaps mean if a source is wrong or low-information, hallucinations surface. Knowledge curation is an ongoing discipline — not a one-time setup. Build it into your operating rhythm as step one. Retrieval failure rate is highly reliable as a signal for improvement. Knowledge curation is an ongoing discipline: build into operating rhythm as step one, retrieval failure rate is highly reliable for improvement.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L3: Knowledge — What Your AI Should Know Pt.1" },
+    "tags": ["RAG Architecture", "The Knowledge Layer", "RAG Failure Modes"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c18",
+    "name": "RAG Ingestion Pipeline",
+    "summary": "Four steps to prepare knowledge for retrieval: Parse (convert documents into text — PDFs require OCR, have random layouts and tables producing garbled output, parsing quality must be debugged; HTML carries noise from JavaScript and ads; spreadsheets encode data in row-column relationships), Chunk (break into retrievable pieces — local precision vs. context tradeoff), Embed (turn into vectors — meaning representation), Store/Index (index for fast search — vector databases for similarity, metadata index for filtering). Index Refresh Strategies: Full re-index (slow and expensive), Incremental (only changes — few updates), Event-driven (updates trigger when data changes, requires stream/event processing).",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L4: Knowledge — What Your AI Should Know Pt.2" },
+    "tags": ["RAG Architecture", "Embeddings", "Chunking Strategies", "RAG Failure Modes"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c19",
+    "name": "Chunking Strategies",
+    "summary": "Five approaches to breaking documents for retrieval. Fixed-Size: split at new sizes, simple and straightforward. Semantic: split at meaningful boundaries, hard to optimize but high retrieval quality. Hierarchical: respect data hierarchy, structured data with long links. Sliding Window (Overlapping): overlapping chunks preserve context across boundaries. Parent-Child: small chunks for precise retrieval, return larger parent chunk for context. Key trade-off: Local (small) = more precision, less context; Larger = more context, less precision. Retrieval quality should be maximized based on use case — retrieving too much or too little both hurt.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L4: Knowledge — What Your AI Should Know Pt.2" },
+    "tags": ["RAG Ingestion Pipeline", "RAG Failure Modes", "RAG Architecture"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c20",
+    "name": "Embeddings",
+    "summary": "Mathematical representations of text as vectors — capturing meaning, not just keywords. Semantically similar items produce similar embeddings. Embedding model choice affects retrieval quality and variable cost. Higher dimensions = more range, higher cost and storage. Multimodal embedding manages rapidly evolving requirements. Vector databases are built for storing and searching high-dimensional vectors. Most production options use hybrid storage — vector index for similarity search, metadata index for filtering.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L4: Knowledge — What Your AI Should Know Pt.2" },
+    "tags": ["RAG Architecture", "RAG Ingestion Pipeline", "Parameters and Weights"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c21",
+    "name": "Retrieval Layer and Query Transformations",
+    "summary": "The retrieval layer transforms user queries into searchable form before matching against the vector index. Query Transformations: Schema Classification (determine query type — semantic text, date search), Query Routing (route complex multi-part questions to the right index or follow-up queries), and Reformulation (multiple-turn queries that achieve many things as follow-ups). User-facing queries are routed into searchable form. Search Methods: Semantic Search (find meaning not keywords — output can be unrelated), Keyword Search (patterns when predicting text, precise matches), Hybrid Search (memory-awareness + term precision — best practice: vector + keyword framework). Best practice: hybrid works best, typically Top K = 3 documents.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L4: Knowledge — What Your AI Should Know Pt.2" },
+    "tags": ["RAG Architecture", "RAG Ingestion Pipeline", "Precision vs. Recall Trade-off"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c22",
+    "name": "Precision vs. Recall Trade-off",
+    "summary": "The retrieval trade-off: High Precision = Retrieved results are relevant, Low Recall = only some relevant results are returned (incomplete). Low Precision = High Recall = comprehensive but noisy results. Risk profile drives this decision — the right balance depends on the product's failure tolerance. For RAG: Top K controls how many chunks to retrieve (high = more catalog data, low = missing data); Similarity Threshold sets the minimum relevance to retrieve (high = relevant + context, low = context + relevance overlap). High precision with low recall means relevant but possibly incomplete. High recall with low precision means comprehensive but noisy.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L4: Knowledge — What Your AI Should Know Pt.2" },
+    "tags": ["Retrieval Layer and Query Transformations", "RAG Architecture", "RAG Failure Modes"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c23",
+    "name": "Augmentation Layer",
+    "summary": "The augmentation layer arranges retrieved chunks into the prompt before generation. Chunk arrangement: lead with the most relevant content, focus on context size, most relevant first. Source availability: tag chunks with source metadata, shadow status, reliability, and routing. Instructive Framing: tell the model how to use the context — answer based on text as a starting point. Token budget management: models can compress at the end and lose context; multi-turn agents must balance knowledge with history. Finite token budget means writing tight policy for message selection: 'else → Conversation History → output.'",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L4: Knowledge — What Your AI Should Know Pt.2" },
+    "tags": ["RAG Architecture", "Retrieval Layer and Query Transformations", "Context Window"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c24",
+    "name": "RAG Failure Modes",
+    "summary": "Three categories. Retrieval failures: Wrong Context (looks correct but wrong — fix with tight chunks and metadata filtering), Missing Context (hallucinate or vague response — fix with hybrid search and lower threshold), Irrelevant Context (bloats space — fix with cross-similarity re-ranking and reduce Top K). Generation failures: Hallucination (ignores good retrieval — strengthen system prompt, add faithfulness), Over-reliance on Context (redirect model to ensure cost-result-context and reference scoring), Conflicting Chunks (redundant/blended response — knowledge ingestion problem). System failures: Data incidents (define, rediscoverable, automate re-indexing), Stale data, Processing bottlenecks, Conflicting embeddings. Scalable for enterprise and sensitive applications requires deliberate design.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L5: Knowledge — What Your AI Should Know Pt.3" },
+    "tags": ["RAG Architecture", "RAG Ingestion Pipeline", "Chunking Strategies", "RAG Evaluation"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  },
+  {
+    "id": "m2-c25",
+    "name": "RAG Evaluation",
+    "summary": "RAG quality requires measurement at two levels. Component-Level: measures each step individually — Retrieval Quality (Precision = % of relevant in retrieval, Recall = % of relevant retrieved, MRR = mean reciprocal rank measuring how high relevant appears, MRCD = discounted version for lower-ranked relevant results) and Generation Quality (Faithfulness — does response reflect context? Relevance — addressing the question? Completeness — covers key aspects?). End-to-End Metrics: overall system quality from user perspective. Both are required: component metrics diagnose where things break; end-to-end metrics measure whether the system actually works. RAG features are scalable by your evaluation discipline.",
+    "scope": { "course": "Maven AI PM", "module": "Module 2", "lesson": "L5: Knowledge — What Your AI Should Know Pt.3" },
+    "tags": ["RAG Failure Modes", "RAG Architecture", "6 Levers of AI PM"],
+    "mastery": { "score": 0, "easeFactor": 2.5, "interval": 1, "repetitions": 0, "nextReviewAt": null, "lastReviewedAt": null }
+  }
+]

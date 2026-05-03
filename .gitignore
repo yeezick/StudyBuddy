@@ -1,0 +1,22 @@
+node_modules/
+.env
+.env.local
+.DS_Store
+*.log
+npm-debug.log*
+.vscode/
+.idea/
+
+# Claude Code session files
+.claude/
+
+# Internal project management (Cowork/build agent files)
+AGENT_HANDOFF.md
+COWORK_CONTEXT.md
+TRACKER.md
+decisions.md
+TARGET_CLAUDE.md
+ROLES.md
+PROJECT.md
+PROJECT_INSTRUCTIONS.md
+MAINTENANCE.md
