@@ -235,7 +235,7 @@ export async function schedulePing(userId) {
 
   const delay = msUntilNextPing(settings);
   await queue.add('slack-ping', { userId }, {
-    jobId: `slack-ping:${userId}`,
+    jobId: `slack-ping__${userId}`,
     delay,
     removeOnComplete: true,
     removeOnFail: 5,
@@ -290,7 +290,7 @@ export async function startScheduler(client, userId, sessionHandlers = {}) {
   // Weekly digest cron
   const [digestH, digestM] = settings.weeklyDigestTime.split(':');
   await queue.upsertJobScheduler(
-    `weekly-digest:${userId}`,
+    `weekly-digest__${userId}`,
     {
       pattern: `${digestM} ${digestH} * * ${settings.weeklyDigestDay}`,
       tz: settings.timezone,
@@ -300,7 +300,7 @@ export async function startScheduler(client, userId, sessionHandlers = {}) {
 
   // Daily snapshot cron (midnight in user's timezone)
   await queue.upsertJobScheduler(
-    `daily-snapshot:${userId}`,
+    `daily-snapshot__${userId}`,
     { pattern: '0 0 * * *', tz: settings.timezone },
     { name: 'daily-snapshot', data: { userId } }
   );

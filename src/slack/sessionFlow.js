@@ -72,11 +72,11 @@ async function scheduleSegmentJobs(userId, session) {
   const recallDelay = Math.max(5000, (SEGMENT_MINUTES * 60 - elapsed) * 1000);
 
   await scheduleJob('session-synth', { userId, sessionId, segmentIndex: n }, {
-    jobId: `session-synth:${sessionId}:${n}`,
+    jobId: `session-synth__${sessionId}__${n}`,
     delay: synthDelay,
   });
   await scheduleJob('session-recall', { userId, sessionId, segmentIndex: n }, {
-    jobId: `session-recall:${sessionId}:${n}`,
+    jobId: `session-recall__${sessionId}__${n}`,
     delay: recallDelay,
   });
 }
@@ -86,26 +86,26 @@ async function scheduleSessionEndJob(userId, session) {
   const endAt = new Date(new Date(startedAt).getTime() + plannedDuration * 60 * 1000);
   const delay = Math.max(5000, endAt.getTime() - Date.now());
   await scheduleJob('session-end', { userId, sessionId }, {
-    jobId: `session-end:${sessionId}`,
+    jobId: `session-end__${sessionId}`,
     delay,
   });
 }
 
 async function removeSegmentJobs(session) {
   const { sessionId, currentSegmentIndex: n } = session;
-  await removeJob(`session-synth:${sessionId}:${n}`);
-  await removeJob(`session-recall:${sessionId}:${n}`);
+  await removeJob(`session-synth__${sessionId}__${n}`);
+  await removeJob(`session-recall__${sessionId}__${n}`);
 }
 
 async function removeAllSessionJobs(session) {
   const { sessionId, segments = [] } = session;
   for (let i = 0; i < segments.length; i++) {
-    await removeJob(`session-synth:${sessionId}:${i}`);
-    await removeJob(`session-recall:${sessionId}:${i}`);
-    await removeJob(`break:${sessionId}:${i}`);
+    await removeJob(`session-synth__${sessionId}__${i}`);
+    await removeJob(`session-recall__${sessionId}__${i}`);
+    await removeJob(`break__${sessionId}__${i}`);
   }
-  await removeJob(`session-end:${sessionId}`);
-  await removeJob(`session-wrap-morning:${process.env.SINGLE_USER_ID}`);
+  await removeJob(`session-end__${sessionId}`);
+  await removeJob(`session-wrap-morning__${process.env.SINGLE_USER_ID}`);
 }
 
 // ── Session init helpers ──────────────────────────────────────────────────────
@@ -297,7 +297,7 @@ export async function handleSessionRecall(client, userId, sessionId, segmentInde
     });
 
     await scheduleJob('break', { userId, sessionId, segmentIndex }, {
-      jobId: `break:${sessionId}:${segmentIndex}`,
+      jobId: `break__${sessionId}__${segmentIndex}`,
       delay: fresh.breakDuration * 60 * 1000,
     });
   });
@@ -360,8 +360,8 @@ export async function handleSessionEnd(client, userId, sessionId) {
 
   // Cancel scheduled jobs that haven't fired yet
   await removeSegmentJobs(session);
-  await removeJob(`session-end:${sessionId}`);
-  await removeJob(`break:${sessionId}:${session.currentSegmentIndex}`);
+  await removeJob(`session-end__${sessionId}`);
+  await removeJob(`break__${sessionId}__${session.currentSegmentIndex}`);
 
   // Clear any stale pending reply (e.g., recall note waiting) before registering the end handler
   const pendingKey = `${session.slackUserId}:${session.slackChannelId}`;
@@ -469,7 +469,7 @@ async function handleBreakDetection(client, userId, channelId, text) {
   await removeSegmentJobs(session);
 
   await scheduleJob('break', { userId, sessionId: session.sessionId, segmentIndex: segIdx }, {
-    jobId: `break:${session.sessionId}:${segIdx}`,
+    jobId: `break__${session.sessionId}__${segIdx}`,
     delay: breakMins * 60 * 1000,
   });
 
@@ -522,7 +522,7 @@ export function registerSessionHandlers() {
     const delay = Math.max(0, tomorrow.getTime() - Date.now());
 
     await scheduleJob('session-wrap-morning', { userId: uid, sessionId }, {
-      jobId: `session-wrap-morning:${uid}`,
+      jobId: `session-wrap-morning__${uid}`,
       delay,
     });
 
