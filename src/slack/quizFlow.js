@@ -38,15 +38,15 @@ async function saveQuiz(quiz) {
   await redis.set(quizKey(quiz.quizId), JSON.stringify(quiz));
 }
 
-function trunc(text, max = 75) {
-  return text.length > max ? text.slice(0, max - 1) + '\u2026' : text;
-}
-
 function confidenceBlocks(quizId, question, questionNum, total) {
   return [
     {
       type: 'section',
       text: { type: 'mrkdwn', text: `*Q${questionNum}/${total}:* ${question.prompt}` },
+    },
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: question.options.join('\n') },
     },
     {
       type: 'section',
@@ -74,17 +74,21 @@ function answerBlocks(quizId, question, questionNum, total, confidenceLevel) {
     },
     {
       type: 'section',
+      text: { type: 'mrkdwn', text: question.options.join('\n') },
+    },
+    {
+      type: 'section',
       text: { type: 'mrkdwn', text: `_Confidence: ${confLabel} \u2713 \u2014 Now select your answer:_` },
     },
     {
       type: 'actions',
       block_id: `ans_${quizId}_${question.id}`,
-      elements: question.options.map((opt, i) => {
+      elements: question.options.map((_, i) => {
         const letter = String.fromCharCode(65 + i);
         return {
           type: 'button',
           action_id: `quiz_answer_${letter}`,
-          text: { type: 'plain_text', text: trunc(opt) },
+          text: { type: 'plain_text', text: letter },
           value: JSON.stringify({ quizId, questionId: question.id, letter, confidenceLevel }),
         };
       }),
