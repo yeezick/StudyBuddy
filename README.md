@@ -1,4 +1,4 @@
-# StudyAgent
+# StudyBuddy
 
 An AI-powered study partner that lives in your Slack. It quizzes you on your own material using spaced repetition, tracks your mastery over time, and sends you quiz pings throughout the day — all from your phone via Slack's native iOS app, no frontend required.
 
@@ -22,7 +22,7 @@ An AI-powered study partner that lives in your Slack. It quizzes you on your own
 ```
 Cowork / Claude (desktop, active sessions only)
     ↓  MCP client — calls add_concepts, get_mastery, etc.
-StudyAgent Server (Node.js, Railway, always on)
+StudyBuddy Server (Node.js, Railway, always on)
     ├── Slack Bolt SDK — slash commands, button interactions, DM listeners
     ├── MCP Server     — exposes tools for pushing new concepts
     ├── BullMQ         — scheduler for pings, session timers, weekly digest
@@ -55,8 +55,8 @@ You will need accounts and credentials for the following services before startin
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/your-username/studyagent.git
-cd studyagent
+git clone https://github.com/yeezick/studybuddy.git
+cd studybuddy
 npm install
 ```
 
@@ -78,7 +78,8 @@ Open `.env` and fill in each value. Where to find them:
 | `UPSTASH_REDIS_REST_URL` | Upstash console → your database → REST API |
 | `UPSTASH_REDIS_REST_TOKEN` | Same page as above |
 | `REDIS_URL` | Upstash console → your database → ioredis connection string |
-| `USER_TIMEZONE` | Your local timezone in tz format, e.g. `America/Chicago` |
+| `SINGLE_USER_ID` | A short identifier for your Redis keys — e.g. your first name or `user1` |
+| `USER_TIMEZONE` | Your local timezone in tz format, e.g. `America/New_York` |
 
 ### 3. Create your Slack app
 
@@ -132,18 +133,20 @@ The server will seed your concept library from `concepts-seed.json` on first boo
 
 ## Tailoring to your own content
 
-StudyAgent is built around a **concept library** — a JSON array of concepts, each with a name, summary, scope (module/lesson), and tags. The bot uses this library to generate questions, track mastery, and schedule reviews. The library is topic-agnostic: it works equally well for a product management course, a programming language, a certification exam, or any other structured subject.
+StudyBuddy is built around a **concept library** — a JSON array of concepts, each with a name, summary, scope (module/lesson), and tags. The bot uses this library to generate questions, track mastery, and schedule reviews. The library is topic-agnostic: it works equally well for a product management course, a programming language, a certification exam, or any other structured subject.
+
+A minimal `concepts-seed.example.json` is included in the repo root to illustrate the expected format. Each concept needs an `id`, a `name`, a `summary` detailed enough for quiz generation, a `scope` (used for filtered quizzes), and 1–3 `tags`.
 
 ### Quickstart: use an AI to set up your library
 
-The fastest way to get started with your own material is to run a setup session with an AI assistant (Claude, ChatGPT, etc.). Paste the following prompt, replacing the bracketed sections with your own context:
+The fastest way to build out your concept library is to run a setup session with an AI assistant (Claude, ChatGPT, etc.). Paste the following prompt, replacing the bracketed sections with your own context:
 
 ---
 
 **Setup prompt:**
 
 ```
-I'm setting up a spaced repetition study bot called StudyAgent. It needs a concept 
+I'm setting up a spaced repetition study bot called StudyBuddy. It needs a concept 
 library in JSON format to generate quiz questions and track my mastery.
 
 My study material: [describe your course, book, certification, or topic]
@@ -179,7 +182,7 @@ If you want to push new concepts later without restarting the server, connect an
 
 ## Roadmap
 
-StudyAgent is currently a single-user MLP. Planned directions include multi-user support, a web UI for reviewing quiz results and mastery history, and a non-technical onboarding path to make setup accessible without requiring code changes. No timelines are set — the project is under active development.
+StudyBuddy is currently a single-user MLP. Planned directions include multi-user support, a web UI for reviewing quiz results and mastery history, and a non-technical onboarding path to make setup accessible without requiring code changes. No timelines are set — the project is under active development.
 
 ---
 

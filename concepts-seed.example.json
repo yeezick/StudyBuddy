@@ -1,0 +1,35 @@
+[
+  {
+    "id": "m1-c01",
+    "name": "Example Concept Name",
+    "summary": "A 2–3 sentence explanation of this concept that is detailed enough for an AI to generate both multiple-choice and free-response quiz questions from. Include the key mechanism, definition, or principle. Include any important nuances or common misconceptions worth testing.",
+    "scope": {
+      "course": "Your Course or Topic Name",
+      "module": "Module 1",
+      "lesson": "L1: Introduction"
+    },
+    "tags": ["framework-or-theme", "related-concept"]
+  },
+  {
+    "id": "m1-c02",
+    "name": "Second Concept Name",
+    "summary": "Another concept summary following the same format. Aim for enough specificity that a quiz question cannot be answered by general knowledge alone — it should require familiarity with this particular material.",
+    "scope": {
+      "course": "Your Course or Topic Name",
+      "module": "Module 1",
+      "lesson": "L1: Introduction"
+    },
+    "tags": ["framework-or-theme"]
+  },
+  {
+    "id": "m2-c01",
+    "name": "First Concept in Module 2",
+    "summary": "Concepts from a second module follow the same structure. The module and lesson fields in scope are used by /quizinit to filter questions by scope — e.g. /quizinit module \"Module 2\" will only draw from concepts where scope.module matches.",
+    "scope": {
+      "course": "Your Course or Topic Name",
+      "module": "Module 2",
+      "lesson": "L2: Core Principles"
+    },
+    "tags": ["another-theme", "cross-module-theme"]
+  }
+]

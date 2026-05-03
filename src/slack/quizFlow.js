@@ -14,6 +14,9 @@ const MAX_QUESTIONS = 10;
 // Scoped pending free-text reply handlers: `${slackUserId}:${channelId}` → async fn(text)
 const pendingReplies = new Map();
 
+// Holds graded free-text results waiting for confidence tap: `${quizId}:${questionId}` → state
+const pendingFreeTextConfidence = new Map();
+
 function quizKey(quizId) {
   return `quiz:${quizId}`;
 }
@@ -104,6 +107,43 @@ function resultBlocks(question, questionNum, total, gradeResult, confidenceLevel
   ];
 }
 
+function freetextConfidenceBlocks(quizId, question, questionNum, total) {
+  return [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `_Q${questionNum}/${total} \u2014 Answer received. How confident were you?_`,
+      },
+    },
+    {
+      type: 'actions',
+      block_id: `ftconf_${quizId}_${question.id}`,
+      elements: ['Low', 'Medium', 'High'].map((label, i) => ({
+        type: 'button',
+        action_id: 'quiz_freetext_confidence',
+        text: { type: 'plain_text', text: label },
+        value: JSON.stringify({ quizId, questionId: question.id, level: i + 1 }),
+      })),
+    },
+  ];
+}
+
+function freetextResultBlocks(questionNum, total, gradeResult, confidenceLevel) {
+  const confLabel = ['Low', 'Medium', 'High'][confidenceLevel - 1];
+  const status = gradeResult.isCorrect ? '\u2705 Correct' : '\u274c Incorrect';
+  return [
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: `Confidence: ${confLabel}  \u00b7  ${status}` },
+    },
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: `_${gradeResult.feedback}_` },
+    },
+  ];
+}
+
 async function postQuestion(client, quiz, index) {
   const q = quiz.questions[index];
   const questionNum = index + 1;
@@ -136,24 +176,21 @@ async function postQuestion(client, quiz, index) {
     freshQ.userAnswer = messageText;
     freshQ.isCorrect = gradeResult.isCorrect;
     freshQ.pointsEarned = gradeResult.score;
-    freshQ.confidenceRating = null;
+    // confidenceRating and sm2Applied stay null/false until confidence tap
 
     await saveQuiz(freshQuiz);
 
-    const statusLabel = gradeResult.isCorrect ? '\u2705 Correct' : '\u274c Incorrect';
     await client.chat.postMessage({
       channel: freshQuiz.slackChannelId,
-      text: `${statusLabel}\n\n${gradeResult.feedback}`,
+      blocks: freetextConfidenceBlocks(freshQuiz.quizId, freshQ, questionNum, total),
+      text: `Q${questionNum}/${total} — Answer received. How confident were you?`,
     });
 
-    const nextIndex = index + 1;
-    if (nextIndex >= freshQuiz.questions.length) {
-      await completeQuiz(client, freshQuiz);
-    } else {
-      freshQuiz.currentQuestionIndex = nextIndex;
-      await saveQuiz(freshQuiz);
-      await postQuestion(client, freshQuiz, nextIndex);
-    }
+    pendingFreeTextConfidence.set(`${freshQuiz.quizId}:${freshQ.id}`, {
+      gradeResult,
+      quizId: freshQuiz.quizId,
+      index,
+    });
   });
 }
 
@@ -171,6 +208,7 @@ async function completeQuiz(client, quiz) {
   const userId = process.env.SINGLE_USER_ID;
 
   for (const q of answered) {
+    if (q.sm2Applied) continue;
     let qualityScore;
     if (q.type === 'mcq') {
       qualityScore = qualityScoreFromMCQ(q.isCorrect, q.confidenceRating ?? 2);
@@ -256,6 +294,7 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, t
     isCorrect: null,
     confidenceRating: null,
     pointsEarned: null,
+    sm2Applied: false,
   }));
 
   const quizId = crypto.randomUUID();
@@ -341,6 +380,46 @@ export function registerQuizHandlers() {
     const nextIndex = idx + 1;
     if (nextIndex >= quiz.questions.length) {
       await saveQuiz(quiz);
+      await completeQuiz(client, quiz);
+    } else {
+      quiz.currentQuestionIndex = nextIndex;
+      await saveQuiz(quiz);
+      await postQuestion(client, quiz, nextIndex);
+    }
+  });
+
+  boltApp.action('quiz_freetext_confidence', async ({ ack, body, client }) => {
+    await ack();
+    const { quizId, questionId, level } = JSON.parse(body.actions[0].value);
+
+    const pendingKey = `${quizId}:${questionId}`;
+    const pending = pendingFreeTextConfidence.get(pendingKey);
+    if (!pending) return;
+    pendingFreeTextConfidence.delete(pendingKey);
+
+    const { gradeResult, index } = pending;
+
+    const quiz = await loadQuiz(quizId);
+    if (!quiz || quiz.status !== 'in_progress') return;
+
+    const q = quiz.questions[index];
+    q.confidenceRating = level;
+    q.sm2Applied = true;
+
+    await saveQuiz(quiz);
+
+    const qualityScore = qualityScoreFromFreeText(q.pointsEarned ?? 0, level);
+    await applyQuestionResult(process.env.SINGLE_USER_ID, q.conceptId, qualityScore);
+
+    await client.chat.update({
+      channel: body.channel.id,
+      ts: body.message.ts,
+      blocks: freetextResultBlocks(index + 1, quiz.questions.length, gradeResult, level),
+      text: gradeResult.isCorrect ? '\u2705 Correct' : '\u274c Incorrect',
+    });
+
+    const nextIndex = index + 1;
+    if (nextIndex >= quiz.questions.length) {
       await completeQuiz(client, quiz);
     } else {
       quiz.currentQuestionIndex = nextIndex;

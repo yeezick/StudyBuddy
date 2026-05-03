@@ -7,6 +7,9 @@ This is the tactical build brief for the StudyAgent MLP. It is scoped exclusivel
 Slack bot + MCP server sprint. The long-term strategic spec lives in CLAUDE.md — do not
 conflate the two. Do not build anything in CLAUDE.md that is not listed here.
 
+**Also read at session start:** `GIT_CONVENTIONS.md` — branch naming, commit format,
+squash merge gate, and PR rules for every build step.
+
 The goal: a fully functional AI study partner accessible from the native iOS Slack app,
 running 24/7, with no React frontend required. The React UI is Phase 3 and is explicitly
 out of scope for this build.
@@ -349,7 +352,9 @@ Register all of these as slash commands in the Slack app manifest.
 - Bot posts question as plain message with: "Reply to this message with your answer"
 - Bolt `message` listener activated, scoped to `{ userId, channelId }`
 - Listener captures next DM message as answer, immediately deregisters
-- Answer sent to grading service, feedback posted, next question follows
+- Answer sent to grading service; grade result is held pending confidence tap
+- Bot posts confidence prompt [Low] [Medium] [High] before revealing grade (DEC-009, DEC-025)
+- On confidence tap: SM-2 quality score computed, feedback + grade posted, next question follows
 
 **On quiz completion:**
 - Mark quiz completed in Redis
@@ -757,7 +762,7 @@ Build in this exact order. Smoke test each step before proceeding.
 6. **Quiz flow** — MCQ delivery with buttons + confidence, non-MCQ reply-based, grading inline,
    completion summary, mastery updates
 7. **`/mastery` command** — Unicode bar visualization, due-for-review list
-8. **`/status` command** — active session state, next review, last score
+8. **`/brief` command** — active session state, next review, last score (renamed from `/status` — DEC-018)
 9. **Scheduler** — BullMQ setup, random ping job, weekly digest cron, daily snapshot cron
 10. **Study session flow** — `/study start`, segment timers, synthesis warning, recall prompt,
     dynamic break detection, session end, wrap-up quiz offer
