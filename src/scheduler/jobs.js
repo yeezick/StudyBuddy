@@ -244,8 +244,9 @@ export async function schedulePing(userId) {
   console.log(`[scheduler] Next ping for ${userId} in ~${mins} min`);
 }
 
-// For session jobs (used by sessionFlow.js in Step 10)
+// For session jobs — idempotent: removes existing job with same ID before adding
 export async function scheduleJob(name, data, opts = {}) {
+  if (opts.jobId) await removeJob(opts.jobId);
   return queue.add(name, data, { removeOnComplete: true, removeOnFail: 5, ...opts });
 }
 

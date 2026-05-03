@@ -225,6 +225,7 @@ async function initializeSession(client, userId, slackUserId, channelId, topic, 
 async function postSessionPlanAndStart(client, userId, sessionId) {
   const session = await loadSession(userId);
   if (!session || session.sessionId !== sessionId) return;
+  if (['abandoned', 'ending', 'completed'].includes(session.status)) return;
 
   const now = new Date().toISOString();
   session.status = 'active';
@@ -247,7 +248,7 @@ async function postSessionPlanAndStart(client, userId, sessionId) {
 
 export async function endSession(client, userId, slackUserId, channelId) {
   const session = await loadSession(userId);
-  if (!session || ['completed', 'abandoned'].includes(session.status)) {
+  if (!session || ['completed', 'abandoned', 'ending'].includes(session.status)) {
     await client.chat.postMessage({ channel: channelId, text: 'No active session to end.' });
     return;
   }
@@ -282,6 +283,7 @@ export async function handleSessionRecall(client, userId, sessionId, segmentInde
     pendingReplies.delete(pendingKey);
     const fresh = await loadSession(userId);
     if (!fresh || fresh.sessionId !== sessionId) return;
+    if (fresh.status !== 'active') return;
 
     if (!fresh.segments[segmentIndex]) fresh.segments[segmentIndex] = {};
     fresh.segments[segmentIndex].activeRecallNote = text;
@@ -303,7 +305,9 @@ export async function handleSessionRecall(client, userId, sessionId, segmentInde
 
 export async function handleBreakEnd(client, userId, sessionId, segmentIndex) {
   const session = await loadSession(userId);
-  if (!session || session.sessionId !== sessionId || session.status !== 'on_break') return;
+  if (!session || session.sessionId !== sessionId) return;
+  if (['ending', 'completed', 'abandoned'].includes(session.status)) return;
+  if (session.status !== 'on_break') return;
 
   await client.chat.postMessage({
     channel: session.slackChannelId,
@@ -348,16 +352,26 @@ async function resumeAfterBreak(client, userId, sessionId, prevSegmentIndex) {
 export async function handleSessionEnd(client, userId, sessionId) {
   const session = await loadSession(userId);
   if (!session || session.sessionId !== sessionId) return;
-  if (['completed', 'abandoned'].includes(session.status)) return;
+  if (['completed', 'abandoned', 'ending'].includes(session.status)) return;
 
+  // Mark ending immediately to prevent double invocation (BullMQ fire + /focus end race)
+  session.status = 'ending';
+  await saveSession(userId, session);
+
+  // Cancel scheduled jobs that haven't fired yet
   await removeSegmentJobs(session);
+  await removeJob(`session-end:${sessionId}`);
+  await removeJob(`break:${sessionId}:${session.currentSegmentIndex}`);
+
+  // Clear any stale pending reply (e.g., recall note waiting) before registering the end handler
+  const pendingKey = `${session.slackUserId}:${session.slackChannelId}`;
+  pendingReplies.delete(pendingKey);
 
   await client.chat.postMessage({
     channel: session.slackChannelId,
     text: `🎓 *Session complete.*\n\nBefore you close out — reply with one concept from tonight and how you'd apply it at work or in something you're building.`,
   });
 
-  const pendingKey = `${session.slackUserId}:${session.slackChannelId}`;
   pendingReplies.set(pendingKey, async (text) => {
     pendingReplies.delete(pendingKey);
     const fresh = await loadSession(userId);

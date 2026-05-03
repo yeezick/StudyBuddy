@@ -291,7 +291,7 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
       channel: channelId,
       text: 'No concepts found for that scope. Try `/quizinit` without arguments to quiz on all concepts.',
     });
-    return;
+    return null;
   }
 
   const count = countOverride ?? Math.min(MAX_QUESTIONS, concepts.length);
@@ -349,104 +349,116 @@ export function registerQuizHandlers() {
 
   boltApp.action('quiz_confidence', async ({ ack, body, client }) => {
     await ack();
-    const { quizId, questionId, level } = JSON.parse(body.actions[0].value);
-    const quiz = await loadQuiz(quizId);
-    if (!quiz || quiz.status !== 'in_progress') return;
+    try {
+      const { quizId, questionId, level } = JSON.parse(body.actions[0].value);
+      const quiz = await loadQuiz(quizId);
+      if (!quiz || quiz.status !== 'in_progress') return;
 
-    const idx = quiz.questions.findIndex((q) => q.id === questionId);
-    const q = quiz.questions[idx];
-    if (!q || q.confidenceRating !== null) return;
+      const idx = quiz.questions.findIndex((q) => q.id === questionId);
+      const q = quiz.questions[idx];
+      if (!q || q.confidenceRating !== null) return;
 
-    q.confidenceRating = level;
-    await saveQuiz(quiz);
+      q.confidenceRating = level;
+      await saveQuiz(quiz);
 
-    await client.chat.update({
-      channel: body.channel.id,
-      ts: body.message.ts,
-      blocks: answerBlocks(quizId, q, idx + 1, quiz.questions.length, level),
-      text: `Q${idx + 1}/${quiz.questions.length}: ${q.prompt}`,
-    });
+      await client.chat.update({
+        channel: body.channel.id,
+        ts: body.message.ts,
+        blocks: answerBlocks(quizId, q, idx + 1, quiz.questions.length, level),
+        text: `Q${idx + 1}/${quiz.questions.length}: ${q.prompt}`,
+      });
+    } catch (err) {
+      console.error('[quiz_confidence] error:', err);
+    }
   });
 
   boltApp.action('quiz_answer', async ({ ack, body, client }) => {
     await ack();
-    const { quizId, questionId, letter, confidenceLevel } = JSON.parse(body.actions[0].value);
-    const quiz = await loadQuiz(quizId);
-    if (!quiz || quiz.status !== 'in_progress') return;
+    try {
+      const { quizId, questionId, letter, confidenceLevel } = JSON.parse(body.actions[0].value);
+      const quiz = await loadQuiz(quizId);
+      if (!quiz || quiz.status !== 'in_progress') return;
 
-    const idx = quiz.questions.findIndex((q) => q.id === questionId);
-    const q = quiz.questions[idx];
-    if (!q || q.isCorrect !== null) return;
+      const idx = quiz.questions.findIndex((q) => q.id === questionId);
+      const q = quiz.questions[idx];
+      if (!q || q.isCorrect !== null) return;
 
-    if (q.confidenceRating === null) {
-      await client.chat.postEphemeral({
+      if (q.confidenceRating === null) {
+        await client.chat.postEphemeral({
+          channel: body.channel.id,
+          user: body.user.id,
+          text: 'Please select a confidence level before answering.',
+        });
+        return;
+      }
+
+      const gradeResult = gradeMCQ(q, letter);
+      q.userAnswer = letter;
+      q.isCorrect = gradeResult.isCorrect;
+      q.pointsEarned = gradeResult.score;
+
+      await client.chat.update({
         channel: body.channel.id,
-        user: body.user.id,
-        text: 'Please select a confidence level before answering.',
+        ts: body.message.ts,
+        blocks: resultBlocks(q, idx + 1, quiz.questions.length, gradeResult, confidenceLevel),
+        text: `Q${idx + 1}/${quiz.questions.length}: ${q.prompt}`,
       });
-      return;
-    }
 
-    const gradeResult = gradeMCQ(q, letter);
-    q.userAnswer = letter;
-    q.isCorrect = gradeResult.isCorrect;
-    q.pointsEarned = gradeResult.score;
-
-    await client.chat.update({
-      channel: body.channel.id,
-      ts: body.message.ts,
-      blocks: resultBlocks(q, idx + 1, quiz.questions.length, gradeResult, confidenceLevel),
-      text: `Q${idx + 1}/${quiz.questions.length}: ${q.prompt}`,
-    });
-
-    const nextIndex = idx + 1;
-    if (nextIndex >= quiz.questions.length) {
-      await saveQuiz(quiz);
-      await completeQuiz(client, quiz);
-    } else {
-      quiz.currentQuestionIndex = nextIndex;
-      await saveQuiz(quiz);
-      await postQuestion(client, quiz, nextIndex);
+      const nextIndex = idx + 1;
+      if (nextIndex >= quiz.questions.length) {
+        await saveQuiz(quiz);
+        await completeQuiz(client, quiz);
+      } else {
+        quiz.currentQuestionIndex = nextIndex;
+        await saveQuiz(quiz);
+        await postQuestion(client, quiz, nextIndex);
+      }
+    } catch (err) {
+      console.error('[quiz_answer] error:', err);
     }
   });
 
   boltApp.action('quiz_freetext_confidence', async ({ ack, body, client }) => {
     await ack();
-    const { quizId, questionId, level } = JSON.parse(body.actions[0].value);
+    try {
+      const { quizId, questionId, level } = JSON.parse(body.actions[0].value);
 
-    const pendingKey = `${quizId}:${questionId}`;
-    const pending = pendingFreeTextConfidence.get(pendingKey);
-    if (!pending) return;
-    pendingFreeTextConfidence.delete(pendingKey);
+      const pendingKey = `${quizId}:${questionId}`;
+      const pending = pendingFreeTextConfidence.get(pendingKey);
+      if (!pending) return;
+      pendingFreeTextConfidence.delete(pendingKey);
 
-    const { gradeResult, index } = pending;
+      const { gradeResult, index } = pending;
 
-    const quiz = await loadQuiz(quizId);
-    if (!quiz || quiz.status !== 'in_progress') return;
+      const quiz = await loadQuiz(quizId);
+      if (!quiz || quiz.status !== 'in_progress') return;
 
-    const q = quiz.questions[index];
-    q.confidenceRating = level;
-    q.sm2Applied = true;
+      const q = quiz.questions[index];
+      q.confidenceRating = level;
+      q.sm2Applied = true;
 
-    await saveQuiz(quiz);
-
-    const qualityScore = qualityScoreFromFreeText(q.pointsEarned ?? 0, level);
-    await applyQuestionResult(process.env.SINGLE_USER_ID, q.conceptId, qualityScore);
-
-    await client.chat.update({
-      channel: body.channel.id,
-      ts: body.message.ts,
-      blocks: freetextResultBlocks(index + 1, quiz.questions.length, gradeResult, level),
-      text: gradeResult.isCorrect ? '\u2705 Correct' : '\u274c Incorrect',
-    });
-
-    const nextIndex = index + 1;
-    if (nextIndex >= quiz.questions.length) {
-      await completeQuiz(client, quiz);
-    } else {
-      quiz.currentQuestionIndex = nextIndex;
       await saveQuiz(quiz);
-      await postQuestion(client, quiz, nextIndex);
+
+      const qualityScore = qualityScoreFromFreeText(q.pointsEarned ?? 0, level);
+      await applyQuestionResult(process.env.SINGLE_USER_ID, q.conceptId, qualityScore);
+
+      await client.chat.update({
+        channel: body.channel.id,
+        ts: body.message.ts,
+        blocks: freetextResultBlocks(index + 1, quiz.questions.length, gradeResult, level),
+        text: gradeResult.isCorrect ? '\u2705 Correct' : '\u274c Incorrect',
+      });
+
+      const nextIndex = index + 1;
+      if (nextIndex >= quiz.questions.length) {
+        await completeQuiz(client, quiz);
+      } else {
+        quiz.currentQuestionIndex = nextIndex;
+        await saveQuiz(quiz);
+        await postQuestion(client, quiz, nextIndex);
+      }
+    } catch (err) {
+      console.error('[quiz_freetext_confidence] error:', err);
     }
   });
 }
