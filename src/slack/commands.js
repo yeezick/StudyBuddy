@@ -41,7 +41,7 @@ async function echo(client, channelId, text) {
 export function registerCommands() {
   boltApp.command('/quizinit', async ({ command, ack, client, respond }) => {
     await ack();
-    await echo(client, command.channel_id, `/quizinit${command.text ? ` ${command.text}` : ''}`);
+    await echo(client, command.channel_id, 'Starting quiz');
     const parsed = parseQuizArgs(command.text);
 
     if (parsed.mode === 'unknown') {
@@ -66,7 +66,11 @@ export function registerCommands() {
 
   boltApp.command('/focus', async ({ command, ack, client, respond }) => {
     await ack();
-    await echo(client, command.channel_id, `/focus${command.text ? ` ${command.text}` : ''}`);
+    const focusText = (command.text ?? '').trim().toLowerCase();
+    const focusLabel = focusText.startsWith('start') ? 'Starting focus session'
+      : focusText === 'end' ? 'Ending focus session'
+      : '/focus';
+    await echo(client, command.channel_id, focusLabel);
     const parsed = parseStudyArgs(command.text);
     const userId = process.env.SINGLE_USER_ID;
 
@@ -102,7 +106,7 @@ export function registerCommands() {
 
   boltApp.command('/mastery', async ({ command, ack, client }) => {
     await ack();
-    await echo(client, command.channel_id, '/mastery');
+    await echo(client, command.channel_id, 'Loading mastery');
     const userId = process.env.SINGLE_USER_ID;
     try {
       await postMasterySnapshot(client, userId, command.channel_id);
@@ -117,7 +121,7 @@ export function registerCommands() {
 
   boltApp.command('/brief', async ({ command, ack, client }) => {
     await ack();
-    await echo(client, command.channel_id, '/brief');
+    await echo(client, command.channel_id, 'Getting your brief');
     const userId = process.env.SINGLE_USER_ID;
     try {
       await postBrief(client, userId, command.channel_id);
@@ -132,7 +136,7 @@ export function registerCommands() {
 
   boltApp.command('/quizcancel', async ({ command, ack, client }) => {
     await ack();
-    await echo(client, command.channel_id, '/quizcancel');
+    await echo(client, command.channel_id, 'Cancelling quiz');
     const userId = process.env.SINGLE_USER_ID;
     try {
       const cancelled = await cancelQuiz(userId);
