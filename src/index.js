@@ -5,6 +5,14 @@ import { seedIfEmpty } from './lib/concepts.js';
 import { boltApp } from './slack/app.js';
 import { registerCommands } from './slack/commands.js';
 import { registerQuizHandlers } from './slack/quizFlow.js';
+import {
+  handleSessionSynth,
+  handleSessionRecall,
+  handleBreakEnd,
+  handleSessionEnd,
+  handleSessionWrapMorning,
+  registerSessionHandlers,
+} from './slack/sessionFlow.js';
 import { startScheduler } from './scheduler/jobs.js';
 
 const app = express();
@@ -37,8 +45,15 @@ async function start() {
   await seedIfEmpty(userId);
   registerCommands();
   registerQuizHandlers();
+  registerSessionHandlers();
   await boltApp.start();
-  await startScheduler(boltApp.client, userId);
+  await startScheduler(boltApp.client, userId, {
+    synth:       (job) => handleSessionSynth(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
+    recall:      (job) => handleSessionRecall(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
+    sessionEnd:  (job) => handleSessionEnd(boltApp.client, job.data.userId, job.data.sessionId),
+    breakEnd:    (job) => handleBreakEnd(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
+    wrapMorning: (job) => handleSessionWrapMorning(boltApp.client, job.data.userId, job.data.sessionId),
+  });
   console.log('⚡️ Bolt connected (Socket Mode)');
   app.listen(port, () => {
     console.log(`StudyAgent listening on port ${port}`);
