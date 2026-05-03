@@ -14,6 +14,7 @@ import {
   registerSessionHandlers,
 } from './slack/sessionFlow.js';
 import { startScheduler } from './scheduler/jobs.js';
+import { mountMcp } from './mcp/server.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -43,6 +44,7 @@ app.get('/health', async (req, res) => {
 
 async function start() {
   await seedIfEmpty(userId);
+  mountMcp(app);
   registerCommands();
   registerQuizHandlers();
   registerSessionHandlers();
