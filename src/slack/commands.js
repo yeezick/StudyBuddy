@@ -34,15 +34,20 @@ function parseStudyArgs(text) {
   return { sub: 'unknown', raw: trimmed };
 }
 
+async function echo(client, channelId, text) {
+  await client.chat.postMessage({ channel: channelId, text: `${text} ⏳` });
+}
+
 export function registerCommands() {
   boltApp.command('/quizinit', async ({ command, ack, client, respond }) => {
     await ack();
+    await echo(client, command.channel_id, `/quizinit${command.text ? ` ${command.text}` : ''}`);
     const parsed = parseQuizArgs(command.text);
 
     if (parsed.mode === 'unknown') {
       await respond({
         response_type: 'ephemeral',
-        text: 'Unrecognized input. Try:\n\u2022 `/quizinit` \u2014 all concepts\n\u2022 `/quizinit module "Module 2"`\n\u2022 `/quizinit lesson "L3"`\n\u2022 `/quizinit "explain RAG failure modes"`',
+        text: 'Unrecognized input. Try:\n• `/quizinit` — all concepts\n• `/quizinit module "Module 2"`\n• `/quizinit lesson "L3"`\n• `/quizinit "explain RAG failure modes"`',
       });
       return;
     }
@@ -54,13 +59,14 @@ export function registerCommands() {
       console.error('[quizinit] startQuiz failed:', err);
       await client.chat.postMessage({
         channel: command.channel_id,
-        text: '\u26a0\ufe0f Something went wrong starting the quiz. Check server logs.',
+        text: '⚠️ Something went wrong starting the quiz. Check server logs.',
       });
     }
   });
 
   boltApp.command('/focus', async ({ command, ack, client, respond }) => {
     await ack();
+    await echo(client, command.channel_id, `/focus${command.text ? ` ${command.text}` : ''}`);
     const parsed = parseStudyArgs(command.text);
     const userId = process.env.SINGLE_USER_ID;
 
@@ -96,6 +102,7 @@ export function registerCommands() {
 
   boltApp.command('/mastery', async ({ command, ack, client }) => {
     await ack();
+    await echo(client, command.channel_id, '/mastery');
     const userId = process.env.SINGLE_USER_ID;
     try {
       await postMasterySnapshot(client, userId, command.channel_id);
@@ -103,13 +110,14 @@ export function registerCommands() {
       console.error('[mastery] postMasterySnapshot failed:', err);
       await client.chat.postMessage({
         channel: command.channel_id,
-        text: '\u26a0\ufe0f Something went wrong fetching your mastery. Check server logs.',
+        text: '⚠️ Something went wrong fetching your mastery. Check server logs.',
       });
     }
   });
 
   boltApp.command('/brief', async ({ command, ack, client }) => {
     await ack();
+    await echo(client, command.channel_id, '/brief');
     const userId = process.env.SINGLE_USER_ID;
     try {
       await postBrief(client, userId, command.channel_id);
@@ -117,7 +125,7 @@ export function registerCommands() {
       console.error('[brief] postBrief failed:', err);
       await client.chat.postMessage({
         channel: command.channel_id,
-        text: '\u26a0\ufe0f Something went wrong fetching your brief. Check server logs.',
+        text: '⚠️ Something went wrong fetching your brief. Check server logs.',
       });
     }
   });
