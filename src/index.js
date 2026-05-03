@@ -13,7 +13,7 @@ import {
   handleSessionWrapMorning,
   registerSessionHandlers,
 } from './slack/sessionFlow.js';
-import { startScheduler } from './scheduler/jobs.js';
+import { startScheduler, firePingNow } from './scheduler/jobs.js';
 import { mountMcp } from './mcp/server.js';
 
 const app = express();
@@ -23,6 +23,16 @@ const userId = process.env.SINGLE_USER_ID;
 if (!userId) {
   throw new Error('Missing SINGLE_USER_ID. Set it in .env');
 }
+
+app.get('/test/ping', async (req, res) => {
+  try {
+    const result = await firePingNow(userId);
+    res.json({ ...result, timestamp: new Date().toISOString() });
+  } catch (err) {
+    console.error(`[test/ping] failed | userId=${userId} | ${err.message}`);
+    res.status(500).json({ ok: false, error: err.message, timestamp: new Date().toISOString() });
+  }
+});
 
 app.get('/health', async (req, res) => {
   try {

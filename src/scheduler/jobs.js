@@ -244,6 +244,27 @@ export async function schedulePing(userId) {
   console.log(`[scheduler] Next ping for ${userId} in ~${mins} min`);
 }
 
+// Immediately fires a ping quiz for the given userId — bypasses window check and rescheduling.
+// Used by GET /test/ping for smoke testing.
+export async function firePingNow(userId) {
+  if (!slackClient) throw new Error('Scheduler not started — call startScheduler first');
+  const slackUserId = process.env.SLACK_USER_ID;
+  const channelId = await getDMChannel(slackClient, slackUserId);
+  const concepts = await selectPingConcepts(userId);
+  if (concepts.length === 0) {
+    console.log(`[scheduler:test-ping] no concepts for userId=${userId}`);
+    return { ok: false, reason: 'no_concepts' };
+  }
+  await startQuiz(slackClient, userId, slackUserId, channelId, {}, {
+    trigger: 'scheduled_ping',
+    concepts,
+    distribution: PING_DISTRIBUTION,
+    count: PING_COUNT,
+  });
+  console.log(`[scheduler:test-ping] fired ping | userId=${userId} | concepts=${concepts.length}`);
+  return { ok: true, conceptCount: concepts.length };
+}
+
 // For session jobs — idempotent: removes existing job with same ID before adding
 export async function scheduleJob(name, data, opts = {}) {
   if (opts.jobId) await removeJob(opts.jobId);
