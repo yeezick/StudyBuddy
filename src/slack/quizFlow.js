@@ -264,8 +264,15 @@ async function selectConcepts(userId, input) {
   return getConcepts(userId);
 }
 
-export async function startQuiz(client, userId, slackUserId, channelId, input, trigger = 'on_demand') {
-  const concepts = await selectConcepts(userId, input);
+export async function startQuiz(client, userId, slackUserId, channelId, input, options = {}) {
+  const {
+    trigger = 'on_demand',
+    concepts: conceptsOverride = null,
+    distribution: distributionOverride = null,
+    count: countOverride = null,
+  } = options;
+
+  const concepts = conceptsOverride ?? await selectConcepts(userId, input);
   if (concepts.length === 0) {
     await client.chat.postMessage({
       channel: channelId,
@@ -274,11 +281,12 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, t
     return;
   }
 
-  const count = Math.min(MAX_QUESTIONS, concepts.length);
+  const count = countOverride ?? Math.min(MAX_QUESTIONS, concepts.length);
+  const distribution = distributionOverride ?? ON_DEMAND_DISTRIBUTION;
   const rawQuestions = await generateQuestions({
     concepts,
     count,
-    distribution: ON_DEMAND_DISTRIBUTION,
+    distribution,
     freeFormPrompt: input.freeFormPrompt ?? null,
   });
 
