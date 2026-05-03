@@ -75,6 +75,57 @@ export function formatMasteryBlocks(snapshot) {
   return blocks;
 }
 
+// previousSnapshot: { modules: [{ name, avg }] } from mastery-snapshot Redis key 7 days ago
+export function formatWeeklyDigestBlocks(snapshot, previousSnapshot, weekStats) {
+  const { courseName, modules, dueToday } = snapshot;
+
+  const header = courseName
+    ? `\ud83d\udcca *Weekly Digest \u2014 ${courseName}*`
+    : '\ud83d\udcca *Weekly Digest*';
+
+  const prevMap = previousSnapshot
+    ? Object.fromEntries(previousSnapshot.modules.map((m) => [m.name, m.avg]))
+    : {};
+
+  const barLines = modules
+    .map(({ name, avg, count }) => {
+      const pct = Math.round(avg * 100);
+      const delta = prevMap[name] != null ? Math.round((avg - prevMap[name]) * 100) : null;
+      const deltaStr = delta != null ? `  (${delta >= 0 ? '+' : ''}${delta}% this week)` : '';
+      return `${name.padEnd(12)}  ${masteryBar(avg)}  ${String(pct).padStart(3)}%  (${count} concepts)${deltaStr}`;
+    })
+    .join('\n');
+
+  const blocks = [
+    { type: 'section', text: { type: 'mrkdwn', text: header } },
+    { type: 'section', text: { type: 'mrkdwn', text: `\`\`\`${barLines}\`\`\`` } },
+  ];
+
+  if (dueToday.length > 0) {
+    const dueText =
+      '*Due for review today:*\n' + dueToday.map((name) => `\u2022 ${name}`).join('\n');
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: dueText } });
+  }
+
+  if (weekStats) {
+    const { quizCount, conceptsTested } = weekStats;
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `This week: ${quizCount} quiz${quizCount !== 1 ? 'zes' : ''} \u00b7 ${conceptsTested} concepts tested`,
+      },
+    });
+  }
+
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: '`/quizinit` to drill weak concepts now.' },
+  });
+
+  return blocks;
+}
+
 export async function postMasterySnapshot(client, userId, channelId) {
   const snapshot = await buildMasterySnapshot(userId);
 
