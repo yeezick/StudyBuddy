@@ -57,7 +57,7 @@ function confidenceBlocks(quizId, question, questionNum, total) {
       block_id: `conf_${quizId}_${question.id}`,
       elements: ['Low', 'Medium', 'High'].map((label, i) => ({
         type: 'button',
-        action_id: 'quiz_confidence',
+        action_id: `quiz_confidence_${i + 1}`,
         text: { type: 'plain_text', text: label },
         value: JSON.stringify({ quizId, questionId: question.id, level: i + 1 }),
       })),
@@ -83,7 +83,7 @@ function answerBlocks(quizId, question, questionNum, total, confidenceLevel) {
         const letter = String.fromCharCode(65 + i);
         return {
           type: 'button',
-          action_id: 'quiz_answer',
+          action_id: `quiz_answer_${letter}`,
           text: { type: 'plain_text', text: trunc(opt) },
           value: JSON.stringify({ quizId, questionId: question.id, letter, confidenceLevel }),
         };
@@ -128,7 +128,7 @@ function freetextConfidenceBlocks(quizId, question, questionNum, total) {
       block_id: `ftconf_${quizId}_${question.id}`,
       elements: ['Low', 'Medium', 'High'].map((label, i) => ({
         type: 'button',
-        action_id: 'quiz_freetext_confidence',
+        action_id: `quiz_freetext_confidence_${i + 1}`,
         text: { type: 'plain_text', text: label },
         value: JSON.stringify({ quizId, questionId: question.id, level: i + 1 }),
       })),
@@ -347,7 +347,7 @@ export function registerQuizHandlers() {
     if (handler) await handler(message.text ?? '');
   });
 
-  boltApp.action('quiz_confidence', async ({ ack, body, client }) => {
+  boltApp.action(/^quiz_confidence_\d$/, async ({ ack, body, client }) => {
     await ack();
     try {
       const { quizId, questionId, level } = JSON.parse(body.actions[0].value);
@@ -372,7 +372,7 @@ export function registerQuizHandlers() {
     }
   });
 
-  boltApp.action('quiz_answer', async ({ ack, body, client }) => {
+  boltApp.action(/^quiz_answer_[A-Z]$/, async ({ ack, body, client }) => {
     await ack();
     try {
       const { quizId, questionId, letter, confidenceLevel } = JSON.parse(body.actions[0].value);
@@ -418,7 +418,7 @@ export function registerQuizHandlers() {
     }
   });
 
-  boltApp.action('quiz_freetext_confidence', async ({ ack, body, client }) => {
+  boltApp.action(/^quiz_freetext_confidence_\d$/, async ({ ack, body, client }) => {
     await ack();
     try {
       const { quizId, questionId, level } = JSON.parse(body.actions[0].value);
