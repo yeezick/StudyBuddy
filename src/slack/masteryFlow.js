@@ -1,6 +1,15 @@
 import { getConcepts } from '../lib/concepts.js';
 import { getAllMastery } from '../lib/mastery.js';
 
+const MODULE_LABELS = {
+  'Module 1': 'The Paradigm Shift',
+  'Module 2': 'The Product Stack',
+};
+
+function moduleLabel(name) {
+  return MODULE_LABELS[name] ?? name;
+}
+
 function masteryBar(score) {
   const filled = Math.round(score * 10);
   return '\u2588'.repeat(filled) + '\u2591'.repeat(10 - filled);
@@ -43,10 +52,12 @@ export function formatMasteryBlocks(snapshot) {
     ? `\ud83d\udcca *Mastery Snapshot \u2014 ${courseName}*`
     : '\ud83d\udcca *Mastery Snapshot*';
 
+  const labels = modules.map(({ name }) => moduleLabel(name));
+  const labelWidth = Math.max(...labels.map((l) => l.length));
   const barLines = modules
-    .map(({ name, avg, count }) => {
+    .map(({ name, avg, count }, i) => {
       const pct = Math.round(avg * 100);
-      return `${name.padEnd(12)}  ${masteryBar(avg)}  ${String(pct).padStart(3)}%  (${count} concepts)`;
+      return `${labels[i].padEnd(labelWidth)}  ${masteryBar(avg)}  ${String(pct).padStart(3)}%  (${count} concepts)`;
     })
     .join('\n');
 
@@ -87,12 +98,14 @@ export function formatWeeklyDigestBlocks(snapshot, previousSnapshot, weekStats) 
     ? Object.fromEntries(previousSnapshot.modules.map((m) => [m.name, m.avg]))
     : {};
 
+  const labels = modules.map(({ name }) => moduleLabel(name));
+  const labelWidth = Math.max(...labels.map((l) => l.length));
   const barLines = modules
-    .map(({ name, avg, count }) => {
+    .map(({ name, avg, count }, i) => {
       const pct = Math.round(avg * 100);
       const delta = prevMap[name] != null ? Math.round((avg - prevMap[name]) * 100) : null;
       const deltaStr = delta != null ? `  (${delta >= 0 ? '+' : ''}${delta}% this week)` : '';
-      return `${name.padEnd(12)}  ${masteryBar(avg)}  ${String(pct).padStart(3)}%  (${count} concepts)${deltaStr}`;
+      return `${labels[i].padEnd(labelWidth)}  ${masteryBar(avg)}  ${String(pct).padStart(3)}%  (${count} concepts)${deltaStr}`;
     })
     .join('\n');
 

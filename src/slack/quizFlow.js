@@ -38,6 +38,12 @@ async function saveQuiz(quiz) {
   await redis.set(quizKey(quiz.quizId), JSON.stringify(quiz));
 }
 
+const OPTION_EMOJI = ['\u{1F1E6}', '\u{1F1E7}', '\u{1F1E8}', '\u{1F1E9}'];
+
+function formatOptions(options) {
+  return options.map((opt, i) => `${OPTION_EMOJI[i]} ${opt}`).join('\n\n');
+}
+
 function confidenceBlocks(quizId, question, questionNum, total) {
   return [
     {
@@ -46,7 +52,7 @@ function confidenceBlocks(quizId, question, questionNum, total) {
     },
     {
       type: 'section',
-      text: { type: 'mrkdwn', text: question.options.join('\n') },
+      text: { type: 'mrkdwn', text: formatOptions(question.options) },
     },
     {
       type: 'section',
@@ -74,7 +80,7 @@ function answerBlocks(quizId, question, questionNum, total, confidenceLevel) {
     },
     {
       type: 'section',
-      text: { type: 'mrkdwn', text: question.options.join('\n') },
+      text: { type: 'mrkdwn', text: formatOptions(question.options) },
     },
     {
       type: 'section',
