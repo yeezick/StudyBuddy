@@ -20,7 +20,7 @@ let slackClient = null;
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
-async function getSettings(userId) {
+export async function getSettings(userId) {
   const raw = await redis.get(`settings:${userId}`);
   const stored = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {};
   return {
@@ -256,7 +256,7 @@ export async function removeJob(jobId) {
 
 // ── Startup ───────────────────────────────────────────────────────────────────
 
-export async function startScheduler(client, userId) {
+export async function startScheduler(client, userId, sessionHandlers = {}) {
   slackClient = client;
 
   queue = new Queue('studybuddy', { connection });
@@ -265,10 +265,14 @@ export async function startScheduler(client, userId) {
     'studybuddy',
     async (job) => {
       switch (job.name) {
-        case 'slack-ping':       return handlePing(job);
-        case 'weekly-digest':    return handleWeeklyDigest(job);
-        case 'daily-snapshot':   return handleDailySnapshot(job);
-        // session-synth, session-recall, session-end, break — wired in Step 10
+        case 'slack-ping':            return handlePing(job);
+        case 'weekly-digest':         return handleWeeklyDigest(job);
+        case 'daily-snapshot':        return handleDailySnapshot(job);
+        case 'session-synth':         return sessionHandlers.synth?.(job);
+        case 'session-recall':        return sessionHandlers.recall?.(job);
+        case 'session-end':           return sessionHandlers.sessionEnd?.(job);
+        case 'break':                 return sessionHandlers.breakEnd?.(job);
+        case 'session-wrap-morning':  return sessionHandlers.wrapMorning?.(job);
         default:
           console.warn(`[scheduler] Unhandled job: ${job.name}`);
       }

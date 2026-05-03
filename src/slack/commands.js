@@ -2,6 +2,7 @@ import { boltApp } from './app.js';
 import { startQuiz } from './quizFlow.js';
 import { postMasterySnapshot } from './masteryFlow.js';
 import { postBrief } from './briefFlow.js';
+import { startSession, endSession } from './sessionFlow.js';
 
 function parseQuizArgs(text) {
   const trimmed = (text ?? '').trim();
@@ -58,12 +59,38 @@ export function registerCommands() {
     }
   });
 
-  boltApp.command('/focus', async ({ command, ack, respond }) => {
+  boltApp.command('/focus', async ({ command, ack, client, respond }) => {
     await ack();
     const parsed = parseStudyArgs(command.text);
+    const userId = process.env.SINGLE_USER_ID;
+
+    if (parsed.sub === 'start') {
+      if (!parsed.topic) {
+        await respond({ response_type: 'ephemeral', text: 'Usage: `/focus start [duration] "topic"`' });
+        return;
+      }
+      try {
+        await startSession(client, userId, command.user_id, command.channel_id, parsed);
+      } catch (err) {
+        console.error('[focus] startSession failed:', err);
+        await client.chat.postMessage({ channel: command.channel_id, text: '⚠️ Something went wrong starting your session.' });
+      }
+      return;
+    }
+
+    if (parsed.sub === 'end') {
+      try {
+        await endSession(client, userId, command.user_id, command.channel_id);
+      } catch (err) {
+        console.error('[focus] endSession failed:', err);
+        await client.chat.postMessage({ channel: command.channel_id, text: '⚠️ Something went wrong ending your session.' });
+      }
+      return;
+    }
+
     await respond({
       response_type: 'ephemeral',
-      text: `📚 \`/focus\` received — Step 10 will implement.\nParsed: \`${JSON.stringify(parsed)}\``,
+      text: 'Usage:\n• `/focus start [duration] "topic"` — start a session\n• `/focus end` — end current session',
     });
   });
 
