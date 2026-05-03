@@ -5,7 +5,7 @@ import { redis } from '../redis.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = path.resolve(path.dirname(__filename), '..', '..');
-const SEED_PATH = path.join(REPO_ROOT, 'concepts-seed.json');
+const SEED_PATH = path.join(REPO_ROOT, 'content', 'concepts-seed.json');
 
 export async function seedIfEmpty(userId) {
   const key = `concepts:${userId}`;

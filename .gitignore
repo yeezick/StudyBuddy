@@ -11,12 +11,5 @@ npm-debug.log*
 .claude/
 
 # Internal project management (Cowork/build agent files)
-AGENT_HANDOFF.md
-COWORK_CONTEXT.md
-TRACKER.md
-decisions.md
-TARGET_CLAUDE.md
-ROLES.md
-PROJECT.md
-PROJECT_INSTRUCTIONS.md
-MAINTENANCE.md
+cowork/
+spec/AGENT_HANDOFF.md
