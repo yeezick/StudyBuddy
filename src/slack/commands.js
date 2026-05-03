@@ -1,5 +1,5 @@
 import { boltApp } from './app.js';
-import { startQuiz } from './quizFlow.js';
+import { startQuiz, cancelQuiz } from './quizFlow.js';
 import { postMasterySnapshot } from './masteryFlow.js';
 import { postBrief } from './briefFlow.js';
 import { startSession, endSession } from './sessionFlow.js';
@@ -126,6 +126,27 @@ export function registerCommands() {
       await client.chat.postMessage({
         channel: command.channel_id,
         text: '⚠️ Something went wrong fetching your brief. Check server logs.',
+      });
+    }
+  });
+
+  boltApp.command('/quizcancel', async ({ command, ack, client }) => {
+    await ack();
+    await echo(client, command.channel_id, '/quizcancel');
+    const userId = process.env.SINGLE_USER_ID;
+    try {
+      const cancelled = await cancelQuiz(userId);
+      await client.chat.postMessage({
+        channel: command.channel_id,
+        text: cancelled
+          ? 'Quiz cancelled. Run `/quizinit` to start a new one.'
+          : 'No active quiz to cancel.',
+      });
+    } catch (err) {
+      console.error(`[quizcancel] error | userId=${userId} | ${err.message}`);
+      await client.chat.postMessage({
+        channel: command.channel_id,
+        text: '⚠️ Something went wrong cancelling the quiz.',
       });
     }
   });
