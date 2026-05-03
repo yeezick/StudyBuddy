@@ -161,7 +161,7 @@ async function handlePing(job) {
       });
     }
   } catch (err) {
-    console.error('[scheduler] handlePing error:', err);
+    console.error(`[scheduler:ping] error | userId=${userId} | ${err.message}`);
   }
 
   await schedulePing(userId);
@@ -205,7 +205,7 @@ async function handleWeeklyDigest(job) {
       text: '\ud83d\udcca Weekly Digest',
     });
   } catch (err) {
-    console.error('[scheduler] handleWeeklyDigest error:', err);
+    console.error(`[scheduler:weekly-digest] error | userId=${userId} | ${err.message}`);
   }
 }
 
@@ -223,7 +223,7 @@ async function handleDailySnapshot(job) {
     await redis.set(`mastery-snapshot:${userId}:${date}`, JSON.stringify(record));
     console.log(`[scheduler] Daily snapshot written for ${userId} on ${date}`);
   } catch (err) {
-    console.error('[scheduler] handleDailySnapshot error:', err);
+    console.error(`[scheduler:daily-snapshot] error | userId=${userId} | ${err.message}`);
   }
 }
 
@@ -282,7 +282,7 @@ export async function startScheduler(client, userId, sessionHandlers = {}) {
   );
 
   worker.on('failed', (job, err) => {
-    console.error(`[scheduler] ${job?.name} (${job?.id}) failed:`, err.message);
+    console.error(`[scheduler:worker] job failed | name=${job?.name} | id=${job?.id} | userId=${job?.data?.userId ?? 'unknown'} | ${err.message}`);
   });
 
   const settings = await getSettings(userId);

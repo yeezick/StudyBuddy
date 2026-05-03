@@ -368,7 +368,8 @@ export function registerQuizHandlers() {
         text: `Q${idx + 1}/${quiz.questions.length}: ${q.prompt}`,
       });
     } catch (err) {
-      console.error('[quiz_confidence] error:', err);
+      console.error(`[quiz_confidence] error | slackUser=${body.user?.id} | ${err.message}`);
+      await client.chat.postEphemeral({ channel: body.channel.id, user: body.user.id, text: '⚠️ Something went wrong. Please try again.' }).catch(() => {});
     }
   });
 
@@ -414,7 +415,8 @@ export function registerQuizHandlers() {
         await postQuestion(client, quiz, nextIndex);
       }
     } catch (err) {
-      console.error('[quiz_answer] error:', err);
+      console.error(`[quiz_answer] error | slackUser=${body.user?.id} | ${err.message}`);
+      await client.chat.postEphemeral({ channel: body.channel.id, user: body.user.id, text: '⚠️ Something went wrong. Please try again.' }).catch(() => {});
     }
   });
 
@@ -458,7 +460,8 @@ export function registerQuizHandlers() {
         await postQuestion(client, quiz, nextIndex);
       }
     } catch (err) {
-      console.error('[quiz_freetext_confidence] error:', err);
+      console.error(`[quiz_freetext_confidence] error | slackUser=${body.user?.id} | ${err.message}`);
+      await client.chat.postEphemeral({ channel: body.channel.id, user: body.user.id, text: '⚠️ Something went wrong. Please try again.' }).catch(() => {});
     }
   });
 }
