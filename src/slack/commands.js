@@ -1,6 +1,7 @@
 import { boltApp } from './app.js';
 import { startQuiz } from './quizFlow.js';
 import { postMasterySnapshot } from './masteryFlow.js';
+import { postBrief } from './briefFlow.js';
 
 function parseQuizArgs(text) {
   const trimmed = (text ?? '').trim();
@@ -80,11 +81,17 @@ export function registerCommands() {
     }
   });
 
-  boltApp.command('/brief', async ({ ack, respond }) => {
+  boltApp.command('/brief', async ({ command, ack, client }) => {
     await ack();
-    await respond({
-      response_type: 'ephemeral',
-      text: '🟢 `/brief` received — Step 8 will implement.',
-    });
+    const userId = process.env.SINGLE_USER_ID;
+    try {
+      await postBrief(client, userId, command.channel_id);
+    } catch (err) {
+      console.error('[brief] postBrief failed:', err);
+      await client.chat.postMessage({
+        channel: command.channel_id,
+        text: '\u26a0\ufe0f Something went wrong fetching your brief. Check server logs.',
+      });
+    }
   });
 }
