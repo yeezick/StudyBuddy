@@ -258,67 +258,83 @@ export async function endSession(client, userId, slackUserId, channelId) {
 // ── Job handlers (called from scheduler) ─────────────────────────────────────
 
 export async function handleSessionSynth(client, userId, sessionId, segmentIndex) {
-  const session = await loadSession(userId);
-  if (!session || session.sessionId !== sessionId) return;
-  if (session.status !== 'active' || session.currentSegmentIndex !== segmentIndex) return;
-
-  await client.chat.postMessage({
-    channel: session.slackChannelId,
-    text: `🧠 *5 minutes left in this segment.*\n\nStart synthesizing — wrap up what you've been working through.\nI'll ask you to write it out in 5 minutes.`,
-  });
-}
-
-export async function handleSessionRecall(client, userId, sessionId, segmentIndex) {
-  const session = await loadSession(userId);
-  if (!session || session.sessionId !== sessionId) return;
-  if (session.status !== 'active' || session.currentSegmentIndex !== segmentIndex) return;
-
-  await client.chat.postMessage({
-    channel: session.slackChannelId,
-    text: `⏱️ *Segment complete.*\n\nBefore your break, reply with:\n1. The most important concept from this segment\n2. How it works in one sentence\n3. One question you still have`,
-  });
-
-  const pendingKey = `${session.slackUserId}:${session.slackChannelId}`;
-  pendingReplies.set(pendingKey, async (text) => {
-    pendingReplies.delete(pendingKey);
-    const fresh = await loadSession(userId);
-    if (!fresh || fresh.sessionId !== sessionId) return;
-    if (fresh.status !== 'active') return;
-
-    if (!fresh.segments[segmentIndex]) fresh.segments[segmentIndex] = {};
-    fresh.segments[segmentIndex].activeRecallNote = text;
-    fresh.segments[segmentIndex].endedAt = new Date().toISOString();
-    fresh.status = 'on_break';
-    await saveSession(userId, fresh);
+  try {
+    const session = await loadSession(userId);
+    if (!session || session.sessionId !== sessionId) return;
+    if (session.status !== 'active' || session.currentSegmentIndex !== segmentIndex) return;
 
     await client.chat.postMessage({
       channel: session.slackChannelId,
-      text: `Logged. Break timer: ${fresh.breakDuration} minutes.`,
+      text: `🧠 *5 minutes left in this segment.*\n\nStart synthesizing — wrap up what you've been working through.\nI'll ask you to write it out in 5 minutes.`,
+    });
+  } catch (err) {
+    console.error(`[session-synth] error | userId=${userId} | sessionId=${sessionId} | ${err.message}`);
+  }
+}
+
+export async function handleSessionRecall(client, userId, sessionId, segmentIndex) {
+  try {
+    const session = await loadSession(userId);
+    if (!session || session.sessionId !== sessionId) return;
+    if (session.status !== 'active' || session.currentSegmentIndex !== segmentIndex) return;
+
+    await client.chat.postMessage({
+      channel: session.slackChannelId,
+      text: `⏱️ *Segment complete.*\n\nBefore your break, reply with:\n1. The most important concept from this segment\n2. How it works in one sentence\n3. One question you still have`,
     });
 
-    await scheduleJob('break', { userId, sessionId, segmentIndex }, {
-      jobId: `break__${sessionId}__${segmentIndex}`,
-      delay: fresh.breakDuration * 60 * 1000,
+    const pendingKey = `${session.slackUserId}:${session.slackChannelId}`;
+    pendingReplies.set(pendingKey, async (text) => {
+      pendingReplies.delete(pendingKey);
+      try {
+        const fresh = await loadSession(userId);
+        if (!fresh || fresh.sessionId !== sessionId) return;
+        if (fresh.status !== 'active') return;
+
+        if (!fresh.segments[segmentIndex]) fresh.segments[segmentIndex] = {};
+        fresh.segments[segmentIndex].activeRecallNote = text;
+        fresh.segments[segmentIndex].endedAt = new Date().toISOString();
+        fresh.status = 'on_break';
+        await saveSession(userId, fresh);
+
+        await client.chat.postMessage({
+          channel: session.slackChannelId,
+          text: `Logged. Break timer: ${fresh.breakDuration} minutes.`,
+        });
+
+        await scheduleJob('break', { userId, sessionId, segmentIndex }, {
+          jobId: `break__${sessionId}__${segmentIndex}`,
+          delay: fresh.breakDuration * 60 * 1000,
+        });
+      } catch (err) {
+        console.error(`[session-recall:reply] error | userId=${userId} | sessionId=${sessionId} | ${err.message}`);
+      }
     });
-  });
+  } catch (err) {
+    console.error(`[session-recall] error | userId=${userId} | sessionId=${sessionId} | ${err.message}`);
+  }
 }
 
 export async function handleBreakEnd(client, userId, sessionId, segmentIndex) {
-  const session = await loadSession(userId);
-  if (!session || session.sessionId !== sessionId) return;
-  if (['ending', 'completed', 'abandoned'].includes(session.status)) return;
-  if (session.status !== 'on_break') return;
+  try {
+    const session = await loadSession(userId);
+    if (!session || session.sessionId !== sessionId) return;
+    if (['ending', 'completed', 'abandoned'].includes(session.status)) return;
+    if (session.status !== 'on_break') return;
 
-  await client.chat.postMessage({
-    channel: session.slackChannelId,
-    text: `Break's up. Reply anything when you're ready.`,
-  });
+    await client.chat.postMessage({
+      channel: session.slackChannelId,
+      text: `Break's up. Reply anything when you're ready.`,
+    });
 
-  const pendingKey = `${session.slackUserId}:${session.slackChannelId}`;
-  pendingReplies.set(pendingKey, async (_text) => {
-    pendingReplies.delete(pendingKey);
-    await resumeAfterBreak(client, userId, sessionId, segmentIndex);
-  });
+    const pendingKey = `${session.slackUserId}:${session.slackChannelId}`;
+    pendingReplies.set(pendingKey, async (_text) => {
+      pendingReplies.delete(pendingKey);
+      await resumeAfterBreak(client, userId, sessionId, segmentIndex);
+    });
+  } catch (err) {
+    console.error(`[session-break-end] error | userId=${userId} | sessionId=${sessionId} | ${err.message}`);
+  }
 }
 
 async function resumeAfterBreak(client, userId, sessionId, prevSegmentIndex) {
@@ -504,44 +520,58 @@ export function registerSessionHandlers() {
 
   boltApp.action('session_wrap_now', async ({ ack, body, client }) => {
     await ack();
-    const { userId: uid, sessionId } = JSON.parse(body.actions[0].value);
-    await startQuiz(client, uid, body.user.id, body.channel.id, {}, {
-      trigger: 'session_wrap',
-      distribution: { mcq: 1.0 },
-      count: 5,
-    });
+    try {
+      const { userId: uid, sessionId } = JSON.parse(body.actions[0].value);
+      await startQuiz(client, uid, body.user.id, body.channel.id, {}, {
+        trigger: 'session_wrap',
+        distribution: { mcq: 1.0 },
+        count: 5,
+      });
+    } catch (err) {
+      console.error(`[session_wrap_now] error | slackUser=${body.user?.id} | ${err.message}`);
+      await client.chat.postEphemeral({ channel: body.channel.id, user: body.user.id, text: '⚠️ Something went wrong starting the wrap-up quiz.' }).catch(() => {});
+    }
   });
 
   boltApp.action('session_wrap_tomorrow', async ({ ack, body, client }) => {
     await ack();
-    const { userId: uid, sessionId } = JSON.parse(body.actions[0].value);
+    try {
+      const { userId: uid, sessionId } = JSON.parse(body.actions[0].value);
 
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(8, 30, 0, 0);
-    const delay = Math.max(0, tomorrow.getTime() - Date.now());
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(8, 30, 0, 0);
+      const delay = Math.max(0, tomorrow.getTime() - Date.now());
 
-    await scheduleJob('session-wrap-morning', { userId: uid, sessionId }, {
-      jobId: `session-wrap-morning__${uid}`,
-      delay,
-    });
+      await scheduleJob('session-wrap-morning', { userId: uid, sessionId }, {
+        jobId: `session-wrap-morning__${uid}`,
+        delay,
+      });
 
-    await client.chat.postMessage({
-      channel: body.channel.id,
-      text: `Got it — wrap-up quiz scheduled for tomorrow morning. 🌅`,
-    });
+      await client.chat.postMessage({
+        channel: body.channel.id,
+        text: `Got it — wrap-up quiz scheduled for tomorrow morning. 🌅`,
+      });
+    } catch (err) {
+      console.error(`[session_wrap_tomorrow] error | slackUser=${body.user?.id} | ${err.message}`);
+      await client.chat.postEphemeral({ channel: body.channel.id, user: body.user.id, text: '⚠️ Something went wrong scheduling the morning quiz.' }).catch(() => {});
+    }
   });
 
   boltApp.action('session_wrap_skip', async ({ ack, body, client }) => {
     await ack();
-    const { userId: uid, sessionId } = JSON.parse(body.actions[0].value);
-    const session = await loadSession(uid);
-    if (session && session.sessionId === sessionId) {
-      await removeAllSessionJobs(session);
+    try {
+      const { userId: uid, sessionId } = JSON.parse(body.actions[0].value);
+      const session = await loadSession(uid);
+      if (session && session.sessionId === sessionId) {
+        await removeAllSessionJobs(session);
+      }
+      await client.chat.postMessage({
+        channel: body.channel.id,
+        text: `Session closed. Great work! 🎓`,
+      });
+    } catch (err) {
+      console.error(`[session_wrap_skip] error | slackUser=${body.user?.id} | ${err.message}`);
     }
-    await client.chat.postMessage({
-      channel: body.channel.id,
-      text: `Session closed. Great work! 🎓`,
-    });
   });
 }

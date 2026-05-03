@@ -56,7 +56,7 @@ export function registerCommands() {
     try {
       await startQuiz(client, userId, command.user_id, command.channel_id, parsed);
     } catch (err) {
-      console.error('[quizinit] startQuiz failed:', err);
+      console.error(`[quizinit] startQuiz failed | userId=${userId} | ${err.message}`);
       await client.chat.postMessage({
         channel: command.channel_id,
         text: '⚠️ Something went wrong starting the quiz. Check server logs.',
@@ -78,7 +78,7 @@ export function registerCommands() {
       try {
         await startSession(client, userId, command.user_id, command.channel_id, parsed);
       } catch (err) {
-        console.error('[focus] startSession failed:', err);
+        console.error(`[focus:start] startSession failed | userId=${userId} | ${err.message}`);
         await client.chat.postMessage({ channel: command.channel_id, text: '⚠️ Something went wrong starting your session.' });
       }
       return;
@@ -88,7 +88,7 @@ export function registerCommands() {
       try {
         await endSession(client, userId, command.user_id, command.channel_id);
       } catch (err) {
-        console.error('[focus] endSession failed:', err);
+        console.error(`[focus:end] endSession failed | userId=${userId} | ${err.message}`);
         await client.chat.postMessage({ channel: command.channel_id, text: '⚠️ Something went wrong ending your session.' });
       }
       return;
@@ -107,7 +107,7 @@ export function registerCommands() {
     try {
       await postMasterySnapshot(client, userId, command.channel_id);
     } catch (err) {
-      console.error('[mastery] postMasterySnapshot failed:', err);
+      console.error(`[mastery] postMasterySnapshot failed | userId=${userId} | ${err.message}`);
       await client.chat.postMessage({
         channel: command.channel_id,
         text: '⚠️ Something went wrong fetching your mastery. Check server logs.',
@@ -122,7 +122,7 @@ export function registerCommands() {
     try {
       await postBrief(client, userId, command.channel_id);
     } catch (err) {
-      console.error('[brief] postBrief failed:', err);
+      console.error(`[brief] postBrief failed | userId=${userId} | ${err.message}`);
       await client.chat.postMessage({
         channel: command.channel_id,
         text: '⚠️ Something went wrong fetching your brief. Check server logs.',
