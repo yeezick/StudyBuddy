@@ -5,6 +5,7 @@ import { seedIfEmpty } from './lib/concepts.js';
 import { boltApp } from './slack/app.js';
 import { registerCommands } from './slack/commands.js';
 import { registerQuizHandlers } from './slack/quizFlow.js';
+import { startScheduler } from './scheduler/jobs.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -37,6 +38,7 @@ async function start() {
   registerCommands();
   registerQuizHandlers();
   await boltApp.start();
+  await startScheduler(boltApp.client, userId);
   console.log('⚡️ Bolt connected (Socket Mode)');
   app.listen(port, () => {
     console.log(`StudyAgent listening on port ${port}`);
