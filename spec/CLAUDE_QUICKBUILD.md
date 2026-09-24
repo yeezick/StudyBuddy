@@ -45,6 +45,7 @@ Upstash Redis
     ├── mastery:{userId}:{id}     — per-concept SM-2 state
     ├── session:{userId}          — active study session state
     ├── quiz:{quizId}             — active quiz state
+    ├── active-quiz:{userId}      — pointer to current quizId (set on start, cleared on complete/cancel)
     └── history:{userId}          — last 30 assessment summaries
 ```
 
@@ -141,7 +142,7 @@ studyagent/
 ├── CLAUDE_QUICKBUILD.md         ← this file
 ├── CLAUDE.md                    ← long-term strategic spec, reference only
 ├── AGENT_HANDOFF.md             ← Claude Code ↔ Cowork handoff channel
-├── concepts-seed.json           ← pre-extracted concept library
+├── content/concepts-seed.example.json ← example library (real seed via SEED_PATH)
 ├── .env.example
 ├── package.json
 ├── railway.json                 ← Railway deploy config
@@ -185,14 +186,14 @@ All data is JSON serialized. No ODM — raw JSON.stringify / JSON.parse througho
 ```javascript
 {
   id: "m1-c01",                  // stable ID, set at ingestion
-  name: "LLMs as Prediction Engines",
+  name: "Example Concept Name",
   summary: "2-3 sentence explanation...",
   scope: {
-    course: "Maven AI PM",
+    course: "Your Course",
     module: "Module 1",
     lesson: "L1: Introduction"
   },
-  tags: ["IPO Framework", "8 LLM Constraints"]
+  tags: ["framework-or-theme", "related-concept"]
 }
 ```
 
@@ -294,22 +295,13 @@ All data is JSON serialized. No ODM — raw JSON.stringify / JSON.parse througho
 
 ## Seed Data
 
-The concept library for Modules 1 and 2 is pre-seeded in `concepts-seed.json` at the
-repo root. On first boot, if `concepts:erick` does not exist in Redis, the server
-loads this file and writes it. Do not regenerate concepts on every boot — check first.
-
-```javascript
-// src/lib/concepts.js — seed on first boot
-async function seedIfEmpty(userId) {
-  const existing = await redis.get(`concepts:${userId}`);
-  if (!existing) {
-    const seed = JSON.parse(fs.readFileSync(path.resolve(new URL('.', import.meta.url).pathname, '../concepts-seed.json'), 'utf8'));
-    // path.resolve from import.meta.url ensures the path works regardless of CWD on Railway
-    await redis.set(`concepts:${userId}`, JSON.stringify(seed));
-    console.log(`Seeded ${seed.length} concepts for ${userId}`);
-  }
-}
-```
+The concept library is loaded from the file named by `SEED_PATH` (absolute or
+repo-relative). Unset → `content/concepts-seed.example.json`. A `SEED_PATH` that
+points at a missing file fails boot with an error naming the variable. Personal
+course material stays out of git (e.g. `private/content/concepts-seed.json`, gitignored).
+On first boot, if `concepts:{userId}` does not exist in Redis, the server loads the
+seed and writes it. Do not regenerate concepts on every boot — check first.
+See `seedIfEmpty` in `src/lib/concepts.js`.
 
 ---
 
@@ -334,6 +326,11 @@ Register all of these as slash commands in the Slack app manifest.
 /brief
   Active session state + next review due + last quiz score
   (Note: /status rejected by Slack platform — collides with built-in user availability command)
+
+/quizcancel
+  Cancel an in-progress quiz. Clears active quiz state from Redis.
+  SM-2 writes for already-answered questions are preserved.
+  No-op with friendly message if no active quiz exists.
 ```
 
 ---
@@ -461,15 +458,15 @@ Store as `segment.useCaseNote`. Post session summary. Offer wrap-up quiz:
 
 **`/mastery` format:**
 ```
-📊 Mastery Snapshot — Maven AI PM
+📊 Mastery Snapshot — Your Course
 
-Module 1 — The Paradigm Shift   ████████░░  78%  (14 concepts)
-Module 2 — The Product Stack     █████░░░░░  48%  (25 concepts)
+Module 1 — Foundations          ████████░░  78%  (14 concepts)
+Module 2 — Applications          █████░░░░░  48%  (25 concepts)
 
 Due for review today:
-• LLMs as Prediction Engines
-• RAG Failure Modes
-• Precision vs. Recall Trade-off
+• Example Concept A
+• Example Concept B
+• Example Concept C
 
 /quiz to drill weak concepts now.
 ```
@@ -479,7 +476,7 @@ Bar: 10 chars, one █ per 10%. Round to nearest 10.
 **Weekly Sunday digest (BullMQ cron, Sunday at configured time):**
 Same format, adds weekly delta per module:
 ```
-Module 2 — The Product Stack   █████░░░░░  52%  (+18% this week)
+Module 2 — Applications         █████░░░░░  52%  (+18% this week)
 ```
 Plus weekly summary line:
 ```
@@ -741,7 +738,7 @@ USER_TIMEZONE=America/Chicago
 - Listeners deregistered immediately after expected reply is captured
 - Confidence rating always collected before answer reveal
 - Interleaving enforced at generation — consecutive questions must not share a concept
-- Concepts seeded from `concepts-seed.json` on first boot only — check before writing
+- Concepts seeded from `SEED_PATH` (default: example seed) on first boot only — check before writing
 - `client/` directory does not exist in this build — do not create it
 - MCP, MongoDB, Clerk, React are out of scope — do not introduce them
 - At session start, read `AGENT_HANDOFF.md` and check Status — block on `AWAITING_COWORK`
@@ -755,7 +752,7 @@ USER_TIMEZONE=America/Chicago
 Build in this exact order. Smoke test each step before proceeding.
 
 1. **Scaffold** — Express server, Redis client, env config, Railway deploy, health check route
-2. **Concept seeding** — load `concepts-seed.json` into Redis on first boot, `get_concepts` util
+2. **Concept seeding** — load the `SEED_PATH` seed into Redis on first boot, `get_concepts` util
 3. **AI services** — `questionGen.js`, `grading.js`, `conceptMatch.js` with test harness
 4. **SM-2** — `sm2.js`, mastery read/write against Redis
 5. **Slack app** — Bolt setup, slash command routing, event subscriptions, DM channel resolution

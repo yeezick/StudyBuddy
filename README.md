@@ -112,7 +112,7 @@ Set your environment variables in the Railway dashboard under your project's Var
 npm run dev
 ```
 
-The server will seed your concept library from `concepts-seed.json` on first boot if Redis is empty.
+The server will seed your concept library on first boot if Redis is empty — from `SEED_PATH` if set, otherwise the bundled example (see [Using your own material](#using-your-own-material)).
 
 ---
 
@@ -135,7 +135,30 @@ The server will seed your concept library from `concepts-seed.json` on first boo
 
 StudyBuddy is built around a **concept library** — a JSON array of concepts, each with a name, summary, scope (module/lesson), and tags. The bot uses this library to generate questions, track mastery, and schedule reviews. The library is topic-agnostic: it works equally well for a product management course, a programming language, a certification exam, or any other structured subject.
 
-A minimal `concepts-seed.example.json` is included in the repo root to illustrate the expected format. Each concept needs an `id`, a `name`, a `summary` detailed enough for quiz generation, a `scope` (used for filtered quizzes), and 1–3 `tags`.
+### Using your own material
+
+The repo ships only an example library, `content/concepts-seed.example.json`, and loads it when `SEED_PATH` is unset. To study your own material, keep your library outside git and point `SEED_PATH` at it:
+
+```bash
+# .env
+SEED_PATH=private/content/concepts-seed.json   # absolute, or relative to the repo root
+```
+
+`private/` is gitignored. If `SEED_PATH` names a file that doesn't exist, the server refuses to boot and says so. Seeding only happens when Redis has no concepts for the user, so to switch libraries on an existing deployment, clear the `concepts:{userId}` key or use the MCP `add_concepts` tool.
+
+The file is a JSON array. Each concept needs an `id`, a `name`, a `summary` detailed enough for quiz generation, a `scope` (used for filtered quizzes), and 1–3 `tags`:
+
+```json
+[
+  {
+    "id": "m1-c01",
+    "name": "Example Concept Name",
+    "summary": "2–3 sentences explaining the concept in enough detail to write quiz questions from.",
+    "scope": { "course": "Your Course", "module": "Module 1", "lesson": "L1: Introduction" },
+    "tags": ["framework-or-theme"]
+  }
+]
+```
 
 ### Quickstart: use an AI to set up your library
 
@@ -166,7 +189,7 @@ Please help me:
      },
      "tags": ["...", "..."]    // 1–3 key themes or frameworks this concept belongs to
    }
-3. Give me a complete concepts-seed.json I can drop into the repo
+3. Give me the complete JSON array as a single file
 
 Make the summaries detailed enough that an AI can write 4-option MCQ questions and 
 free-response questions from them without needing additional context.
@@ -174,7 +197,7 @@ free-response questions from them without needing additional context.
 
 ---
 
-Once you have your `concepts-seed.json`, replace the one in the repo root and restart the server. On first boot it will seed Redis automatically.
+Save the result outside git (e.g. `private/content/concepts-seed.json`), set `SEED_PATH` to it, and restart the server. On first boot it will seed Redis automatically.
 
 If you want to push new concepts later without restarting the server, connect an MCP client (such as Claude's desktop app with MCP configured) to the `/mcp` endpoint — the `add_concepts` tool merges new concepts into Redis without overwriting existing mastery data.
 

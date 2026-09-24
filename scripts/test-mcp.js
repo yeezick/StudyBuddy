@@ -2,7 +2,7 @@ import '../src/lib/env.js';
 import { redis } from '../src/redis.js';
 import { mcp } from '../src/mcp/server.js';
 
-const TEST_USER = process.env.SINGLE_USER_ID;
+const TEST_USER = 'test-mcp-temp';
 const OTHER_USER = 'unauthorized-user';
 
 let failures = 0;
@@ -248,7 +248,7 @@ function runUserValidation() {
 
   let noThrow = true;
   try {
-    validateUser(TEST_USER);
+    validateUser(process.env.SINGLE_USER_ID);
   } catch {
     noThrow = false;
   }
