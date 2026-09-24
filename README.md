@@ -154,11 +154,13 @@ The file is a JSON array. Each concept needs an `id`, a `name`, a `summary` deta
     "id": "m1-c01",
     "name": "Example Concept Name",
     "summary": "2–3 sentences explaining the concept in enough detail to write quiz questions from.",
-    "scope": { "course": "Your Course", "module": "Module 1", "lesson": "L1: Introduction" },
+    "scope": { "course": "Your Course", "module": "Module 1", "moduleLabel": "Getting Started", "lesson": "L1: Introduction" },
     "tags": ["framework-or-theme"]
   }
 ]
 ```
+
+`scope.moduleLabel` is optional: `/mastery` and the weekly digest show it in place of the module name (set it on any concept in the module). Without it, the module name is shown as-is.
 
 ### Quickstart: use an AI to set up your library
 
