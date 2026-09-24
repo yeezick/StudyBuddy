@@ -1,6 +1,6 @@
 display_information:
   name: StudyAgent
-  description: AI study partner — quizzes, spaced retrieval, study sessions in Slack
+  description: "AI study partner - quizzes, spaced retrieval, study sessions in Slack"
   background_color: "#1f2937"
 features:
   bot_user:

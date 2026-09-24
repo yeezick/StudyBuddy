@@ -6,6 +6,7 @@
     "scope": {
       "course": "Your Course or Topic Name",
       "module": "Module 1",
+      "moduleLabel": "Getting Started",
       "lesson": "L1: Introduction"
     },
     "tags": ["framework-or-theme", "related-concept"]
@@ -17,6 +18,7 @@
     "scope": {
       "course": "Your Course or Topic Name",
       "module": "Module 1",
+      "moduleLabel": "Getting Started",
       "lesson": "L1: Introduction"
     },
     "tags": ["framework-or-theme"]
@@ -28,6 +30,7 @@
     "scope": {
       "course": "Your Course or Topic Name",
       "module": "Module 2",
+      "moduleLabel": "Core Principles",
       "lesson": "L2: Core Principles"
     },
     "tags": ["another-theme", "cross-module-theme"]

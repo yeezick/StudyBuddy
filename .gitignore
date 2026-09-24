@@ -13,3 +13,8 @@ npm-debug.log*
 # Internal project management (Cowork/build agent files)
 cowork/
 spec/AGENT_HANDOFF.md
+
+# Private material, local artifacts, CoBrain runtime
+private/
+screenshots/
+.cobrain/
