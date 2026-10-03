@@ -20,13 +20,14 @@ import { ownerConfig } from '../lib/config.js';
 //   getSession(userId) → latest saved session | null    saveSession(userId, session)
 //   getSettings(userId) → object | null                 saveSettings(userId, settings)
 //   getMasterySnapshot(userId, day), saveMasterySnapshot(userId, day, record)
-//   appendReviewEvent(event), getReviewEvents(userId, { limit }) → newest first
+//   appendReviewEvent(event) → event with topicId and ts filled in (append-only)
+//   getReviewEvents(userId, { topicId, since, limit }) → newest first
 //
 // STORE_BACKEND: `redis` (default, today's keys) or `postgres` (needs DATABASE_URL or PG* vars).
 // Quizzes stay in Redis under both backends (short-lived state, DEC-047).
 export function createStoreFromEnv(env = process.env, { redisClient = redis } = {}) {
   const backend = env.STORE_BACKEND || 'redis';
-  const redisStore = createRedisStore({ redis: redisClient });
+  const redisStore = createRedisStore({ redis: redisClient, primaryUserId: ownerConfig(env).userId });
   if (backend === 'redis') return redisStore;
   if (backend === 'postgres') {
     // DATABASE_URL, or the standard libpq PG* variables (PGHOST, PGDATABASE, …) that node-postgres reads itself.

@@ -1,13 +1,10 @@
 import { applyConceptUpdate } from '../mcp/conceptOps.js';
 import { migrate } from './migrate.js';
+import { DEFAULT_TOPIC_ID, libraryTopicId } from './topics.js';
 
-// Until topics reach the app (design §10 slice 3), each user has one library, stored as a
-// topic of its own. The primary (owner) user's library is `ai-pm`, the topic its data moves
-// to in slice 3, so that needs no rename; any other user gets `{userId}-library`. The app
-// keeps seeing local concept ids ("m1-c01"); rows use the global {topicId}:{localId} form.
-export const DEFAULT_TOPIC_ID = 'ai-pm';
-export const libraryTopicId = (userId, primaryUserId) =>
-  (primaryUserId && userId === primaryUserId ? DEFAULT_TOPIC_ID : `${userId}-library`);
+// The app keeps seeing local concept ids ("m1-c01"); rows use the global {topicId}:{localId} form.
+export { DEFAULT_TOPIC_ID, libraryTopicId };
+
 const globalId = (topicId, localId) => `${topicId}:${localId}`;
 const localIdOf = (topicId, id) => (id.startsWith(`${topicId}:`) ? id.slice(topicId.length + 1) : id);
 
@@ -254,13 +251,18 @@ export function createPostgresStore({ pool, ephemeral, migrateOnInit = true, pri
           event.confidence ?? null, event.latencyMs ?? null, event.grade ?? null,
           json(event.prevState), json(event.nextState)],
       );
-      return { ...event, ts: rows[0].ts.toISOString() };
+      return { ...event, topicId, ts: rows[0].ts.toISOString() };
     },
 
-    async getReviewEvents(userId, { limit = 100 } = {}) {
+    async getReviewEvents(userId, { topicId, since, limit = 100 } = {}) {
+      const params = [userId];
+      let where = 'user_id = $1';
+      if (topicId) { params.push(topicId); where += ` AND topic_id = $${params.length}`; }
+      if (since) { params.push(since); where += ` AND ts >= $${params.length}`; }
+      params.push(limit);
       const { rows } = await pool.query(
-        'SELECT * FROM review_events WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
-        [userId, limit],
+        `SELECT * FROM review_events WHERE ${where} ORDER BY id DESC LIMIT $${params.length}`,
+        params,
       );
       return rows.map((r) => withoutNulls({
         userId: r.user_id,

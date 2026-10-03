@@ -1,4 +1,5 @@
 import { applyConceptUpdate, mergeNewConcepts } from '../mcp/conceptOps.js';
+import { libraryTopicId } from './topics.js';
 
 const HISTORY_LIMIT = 30;
 
@@ -22,7 +23,7 @@ const keys = {
 
 // Today's Redis layout behind the store interface (see store/index.js). Key names are
 // unchanged so existing production data keeps working.
-export function createRedisStore({ redis }) {
+export function createRedisStore({ redis, primaryUserId = null }) {
   const getConcepts = async (userId) => parse(await redis.get(keys.concepts(userId))) ?? [];
   const setConcepts = (userId, concepts) => redis.set(keys.concepts(userId), JSON.stringify(concepts));
 
@@ -99,14 +100,24 @@ export function createRedisStore({ redis }) {
       await redis.set(keys.snapshot(userId, day), JSON.stringify(record));
     },
 
+    // Append-only: events are only ever LPUSHed, never trimmed or rewritten.
     async appendReviewEvent(event) {
-      const stored = { ...event, ts: event.ts ?? new Date().toISOString() };
+      const stored = {
+        ...event,
+        topicId: event.topicId ?? libraryTopicId(event.userId, primaryUserId),
+        ts: event.ts ?? new Date().toISOString(),
+      };
       await redis.lpush(keys.reviewEvents(event.userId), JSON.stringify(stored));
       return stored;
     },
 
-    async getReviewEvents(userId, { limit = 100 } = {}) {
-      return (await redis.lrange(keys.reviewEvents(userId), 0, limit - 1)).map(parse);
+    async getReviewEvents(userId, { topicId, since, limit = 100 } = {}) {
+      const key = keys.reviewEvents(userId);
+      if (!topicId && !since) return (await redis.lrange(key, 0, limit - 1)).map(parse);
+      const sinceMs = since ? Date.parse(since) : null;
+      return (await redis.lrange(key, 0, -1)).map(parse)
+        .filter((e) => (!topicId || e.topicId === topicId) && (sinceMs == null || Date.parse(e.ts) >= sinceMs))
+        .slice(0, limit);
     },
   };
 }

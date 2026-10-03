@@ -159,4 +159,38 @@ export function storeContract(name, makeStore) {
     assert.equal((await store.getReviewEvents('u1', { limit: 1 }))[0].conceptId, 'c2');
     assert.deepEqual(await store.getReviewEvents('u2'), []);
   });
+
+  t('review events: optional fields round-trip; null confidence and latency are dropped', async () => {
+    const full = {
+      userId: 'u1', conceptId: 'c1', trigger: 'scheduled_ping', quizId: 'q-9', itemType: 'free_text',
+      correct: false, score: 0.5, confidence: null, latencyMs: null, grade: 1, ts: '2026-10-03T09:00:00.000Z',
+    };
+    const appended = await store.appendReviewEvent(full);
+    const [read] = await store.getReviewEvents('u1');
+    assert.equal(typeof appended.topicId, 'string', 'append fills in the topic');
+    assert.equal(read.topicId, appended.topicId);
+    assert.deepEqual(
+      { ...read, confidence: read.confidence ?? null, latencyMs: read.latencyMs ?? null },
+      { ...full, topicId: appended.topicId },
+    );
+  });
+
+  t('review events: filter by topic and since, then limit', async () => {
+    const at = (h) => `2026-10-03T${String(h).padStart(2, '0')}:00:00.000Z`;
+    const base = { userId: 'u1', itemType: 'mcq', correct: true, grade: 3 };
+    await store.appendReviewEvent({ ...base, conceptId: 'c1', ts: at(8) });
+    await store.appendReviewEvent({ ...base, conceptId: 'c2', ts: at(9), topicId: 'other' });
+    await store.appendReviewEvent({ ...base, conceptId: 'c3', ts: at(10) });
+    await store.appendReviewEvent({ ...base, conceptId: 'c4', ts: at(11), topicId: 'other' });
+    const library = (await store.getReviewEvents('u1')).find((e) => e.conceptId === 'c1').topicId;
+    assert.notEqual(library, 'other');
+
+    const ids = (events) => events.map((e) => e.conceptId);
+    assert.deepEqual(ids(await store.getReviewEvents('u1', { topicId: 'other' })), ['c4', 'c2']);
+    assert.deepEqual(ids(await store.getReviewEvents('u1', { topicId: library })), ['c3', 'c1']);
+    assert.deepEqual(ids(await store.getReviewEvents('u1', { since: at(9) })), ['c4', 'c3', 'c2'], 'since is inclusive');
+    assert.deepEqual(ids(await store.getReviewEvents('u1', { topicId: 'other', since: at(10) })), ['c4']);
+    assert.deepEqual(ids(await store.getReviewEvents('u1', { since: at(9), limit: 2 })), ['c4', 'c3']);
+    assert.deepEqual(await store.getReviewEvents('u1', { topicId: 'nope' }), []);
+  });
 }
