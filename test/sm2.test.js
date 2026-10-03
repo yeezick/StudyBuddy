@@ -1,7 +1,7 @@
 import './helpers/env.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultMastery, updateMastery, qualityScoreFromMCQ, qualityScoreFromFreeText } from '../src/lib/sm2.js';
+import { defaultMastery, updateMastery, QUALITY_FOR_GRADE } from '../src/lib/sm2.js';
 
 const days = (iso) => (new Date(iso).getTime() - Date.now()) / 86400000;
 
@@ -35,10 +35,6 @@ test('EF never drops below 1.3 and score caps at 1', () => {
   assert.ok(m.score <= 1);
 });
 
-test('quality score mapping', () => {
-  assert.equal(qualityScoreFromMCQ(false, 3), 1);
-  assert.deepEqual([1, 2, 3].map((c) => qualityScoreFromMCQ(true, c)), [3, 4, 5]);
-  assert.equal(qualityScoreFromFreeText(1, 3), 5);
-  assert.equal(qualityScoreFromFreeText(0.8, 1), 3);
-  assert.equal(qualityScoreFromFreeText(0, 1), 0);
+test('grade → SM-2 quality (rollback scheduler): Again resets, Hard/Good/Easy = 3/4/5', () => {
+  assert.deepEqual([1, 2, 3, 4].map((g) => QUALITY_FOR_GRADE[g]), [1, 3, 4, 5]);
 });

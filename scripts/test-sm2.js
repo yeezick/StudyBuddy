@@ -1,11 +1,7 @@
 import '../src/lib/env.js';
 import { redis } from '../src/redis.js';
-import {
-  defaultMastery,
-  updateMastery,
-  qualityScoreFromMCQ,
-  qualityScoreFromFreeText,
-} from '../src/lib/sm2.js';
+import { defaultMastery, updateMastery } from '../src/lib/sm2.js';
+import { gradeFor } from '../src/lib/grade.js';
 import {
   getMastery,
   setMastery,
@@ -39,7 +35,7 @@ function daysBetween(isoDate) {
 }
 
 function testAlgorithm() {
-  header('1. SM-2 algorithm correctness');
+  header('1. SM-2 algorithm correctness (rollback scheduler)');
 
   const seed = defaultMastery('m1-c01');
   assert(seed.easeFactor === 2.5, 'default EF = 2.5');
@@ -87,18 +83,13 @@ function testAlgorithm() {
 }
 
 function testQualityScores() {
-  header('2. Quality score mapping');
+  header('2. Grade mapping (DEC-053)');
 
-  assert(qualityScoreFromMCQ(false, 3) === 1, 'MCQ wrong → 1');
-  assert(qualityScoreFromMCQ(true, 1) === 3, 'MCQ correct + Low → 3');
-  assert(qualityScoreFromMCQ(true, 2) === 4, 'MCQ correct + Med → 4');
-  assert(qualityScoreFromMCQ(true, 3) === 5, 'MCQ correct + High → 5');
-
-  assert(qualityScoreFromFreeText(0.8, 2) === 4, 'free-text 0.8 + Med → 4');
-  assert(qualityScoreFromFreeText(0.8, 1) === 3, 'free-text 0.8 + Low → 3 (−1)');
-  assert(qualityScoreFromFreeText(1.0, 3) === 5, 'free-text 1.0 + High → 5');
-  assert(qualityScoreFromFreeText(0.0, 1) === 0, 'free-text 0.0 + Low → 0 (clamped)');
-  assert(qualityScoreFromFreeText(0.5, 2) === 2, 'free-text 0.5 + Med → 2');
+  assert(gradeFor({ isCorrect: false, confidenceRating: 3 }) === 1, 'wrong → Again');
+  assert(gradeFor({ isCorrect: true, confidenceRating: 1 }) === 2, 'right + Guess → Hard');
+  assert(gradeFor({ isCorrect: true, confidenceRating: 2 }) === 3, 'right + Medium → Good');
+  assert(gradeFor({ isCorrect: true }) === 3, 'right + no confidence → Good');
+  assert(gradeFor({ isCorrect: true, confidenceRating: 3 }) === 4, 'right + Sure → Easy');
 }
 
 async function testPersistence() {
@@ -110,18 +101,18 @@ async function testPersistence() {
   assert(initial.conceptId === conceptId, 'getMastery(missing) returns default with correct id');
   assert(initial.repetitions === 0, 'getMastery(missing) returns default repetitions=0');
 
-  const updated = await applyQuestionResult(TEST_USER, conceptId, 5);
-  assert(updated.repetitions === 1, 'applyQuestionResult: repetitions=1 after q=5');
+  const { next: updated } = await applyQuestionResult(TEST_USER, conceptId, 4);
+  assert(updated.reps === 1 && updated.sm2.repetitions === 1, 'applyQuestionResult: reps=1 after Easy');
 
   const reloaded = await getMastery(TEST_USER, conceptId);
-  assert(reloaded.repetitions === 1, 'reloaded from Redis: repetitions=1');
-  assert(approxEq(reloaded.easeFactor, updated.easeFactor), 'reloaded: EF matches');
+  assert(reloaded.reps === 1, 'reloaded from Redis: reps=1');
+  assert(approxEq(reloaded.stability, updated.stability), 'reloaded: stability matches');
   assert(reloaded.lastReviewedAt === updated.lastReviewedAt, 'reloaded: lastReviewedAt matches');
 
   // Apply a second time
-  const second = await applyQuestionResult(TEST_USER, conceptId, 4);
-  assert(second.repetitions === 2, 'second apply: repetitions=2');
-  assert(second.interval === 6, 'second apply: interval=6');
+  const { next: second } = await applyQuestionResult(TEST_USER, conceptId, 3);
+  assert(second.reps === 2 && second.sm2.repetitions === 2, 'second apply: reps=2');
+  assert(second.sm2.interval === 6, 'second apply: SM-2 shadow interval=6');
 }
 
 async function testBatchRead() {

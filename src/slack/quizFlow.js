@@ -5,8 +5,7 @@ import { getConcepts } from '../lib/concepts.js';
 import { generateQuestions } from '../ai/questionGen.js';
 import { gradeMCQ, gradeFreeText } from '../ai/grading.js';
 import { matchConceptsToPrompt } from '../ai/conceptMatch.js';
-import { applyQuestionResult } from '../lib/mastery.js';
-import { qualityOf, recordReview } from '../lib/reviewEvents.js';
+import { reviewAnswer } from '../lib/reviewEvents.js';
 
 const ON_DEMAND_DISTRIBUTION = { mcq: 0.6, short_answer: 0.2, explain: 0.2 };
 const MAX_QUESTIONS = 10;
@@ -193,7 +192,7 @@ async function postQuestion(client, quiz, index) {
     freshQ.answeredAt = answeredAt;
     freshQ.isCorrect = gradeResult.isCorrect;
     freshQ.pointsEarned = gradeResult.score;
-    // confidenceRating, sm2Applied and the review event wait for the confidence tap
+    // confidenceRating, scheduling and the review event wait for the confidence tap
 
     await saveQuiz(freshQuiz);
 
@@ -225,9 +224,7 @@ async function completeQuiz(client, quiz) {
   const { userId } = quiz;
 
   for (const q of answered) {
-    await recordReview(quiz, q);
-    if (q.sm2Applied) continue;
-    await applyQuestionResult(userId, q.conceptId, qualityOf(q));
+    await reviewAnswer(quiz, q);
   }
 
   const concepts = await getConcepts(userId);
@@ -296,9 +293,7 @@ export async function cancelQuiz(userId) {
   // with confidence null.
   for (const q of quiz.questions) {
     if (q.isCorrect === null) continue;
-    await recordReview(quiz, q);
-    if (q.sm2Applied) continue;
-    await applyQuestionResult(userId, q.conceptId, qualityOf(q));
+    await reviewAnswer(quiz, q);
   }
 
   pendingReplies.delete(`${quiz.slackUserId}:${quiz.slackChannelId}`);
@@ -349,7 +344,7 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
     isCorrect: null,
     confidenceRating: null,
     pointsEarned: null,
-    sm2Applied: false,
+    scheduled: false,
     shownAt: null,
     answeredAt: null,
     reviewRecorded: false,
@@ -430,7 +425,7 @@ export async function onQuizAnswer({ ack, body, client }) {
     q.answeredAt = answeredAt;
     q.isCorrect = gradeResult.isCorrect;
     q.pointsEarned = gradeResult.score;
-    await recordReview(quiz, q);
+    await reviewAnswer(quiz, q);
 
     await client.chat.update({
       channel: body.channel.id,
@@ -470,12 +465,9 @@ export async function onFreeTextConfidence({ ack, body, client }) {
 
     const q = quiz.questions[index];
     q.confidenceRating = level;
-    q.sm2Applied = true;
-    await recordReview(quiz, q);
+    await reviewAnswer(quiz, q);
 
     await saveQuiz(quiz);
-
-    await applyQuestionResult(quiz.userId, q.conceptId, qualityOf(q));
 
     await client.chat.update({
       channel: body.channel.id,
