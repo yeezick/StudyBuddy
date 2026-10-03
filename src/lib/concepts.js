@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { store } from '../store/index.js';
+import { redis } from '../redis.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = path.resolve(path.dirname(__filename), '..', '..');
@@ -24,17 +24,22 @@ function resolveSeedPath() {
 
 export async function seedIfEmpty(userId) {
   const seedPath = resolveSeedPath();
-  const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
-  if (!(await store.seedConcepts(userId, seed))) {
+  const key = `concepts:${userId}`;
+  const existing = await redis.get(key);
+  if (existing) {
     console.log(`Concepts already seeded for ${userId}, skipping`);
     return { seeded: false, count: 0 };
   }
+  const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+  await redis.set(key, JSON.stringify(seed));
   console.log(`Seeded ${seed.length} concepts for ${userId} from ${path.relative(REPO_ROOT, seedPath)}`);
   return { seeded: true, count: seed.length };
 }
 
 export async function getConcepts(userId, { module: moduleFilter, lesson } = {}) {
-  const concepts = await store.getConcepts(userId);
+  const raw = await redis.get(`concepts:${userId}`);
+  if (!raw) return [];
+  const concepts = typeof raw === 'string' ? JSON.parse(raw) : raw;
   if (!moduleFilter && !lesson) return concepts;
   return concepts.filter((c) => {
     if (moduleFilter && c.scope?.module !== moduleFilter) return false;

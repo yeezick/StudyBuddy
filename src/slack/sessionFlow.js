@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { store } from '../store/index.js';
+import { redis } from '../redis.js';
 import { boltApp } from './app.js';
 import { getConcepts } from '../lib/concepts.js';
 import { startQuiz, registerQuizCompletion } from './quizFlow.js';
@@ -57,10 +57,19 @@ export function formatSessionPlan(session) {
   return lines.join('\n');
 }
 
-// ── Store helpers ─────────────────────────────────────────────────────────────
+// ── Redis helpers ─────────────────────────────────────────────────────────────
 
-const loadSession = (userId) => store.getSession(userId);
-const saveSession = (userId, session) => store.saveSession(userId, session);
+function sessionKey(userId) { return `session:${userId}`; }
+
+async function loadSession(userId) {
+  const raw = await redis.get(sessionKey(userId));
+  if (!raw) return null;
+  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+}
+
+async function saveSession(userId, session) {
+  await redis.set(sessionKey(userId), JSON.stringify(session));
+}
 
 // ── BullMQ job helpers ────────────────────────────────────────────────────────
 
@@ -109,11 +118,12 @@ async function removeAllSessionJobs(userId, session) {
 // ── Session init helpers ──────────────────────────────────────────────────────
 
 async function postSessionRecap(client, userId, channelId) {
-  const entries = await store.getHistory(userId, 3);
-  if (entries.length === 0) {
+  const historyRaw = await redis.lrange(`history:${userId}`, 0, 2);
+  if (historyRaw.length === 0) {
     await client.chat.postMessage({ channel: channelId, text: '_No previous quiz history yet._' });
     return [];
   }
+  const entries = historyRaw.map(r => typeof r === 'string' ? JSON.parse(r) : r);
   const lines = ['📋 *Last quizzes:*'];
   for (const e of entries) {
     const date = new Date(e.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });

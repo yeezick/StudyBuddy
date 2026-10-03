@@ -14,15 +14,8 @@ export function stubRedis() {
   const commands = {
     get: (k) => store.get(k) ?? null,
     set: (k, v) => { store.set(k, v); return 'OK'; },
-    del: (...ks) => ks.reduce((n, k) => n + (store.delete(k) || lists.delete(k) ? 1 : 0), 0),
+    del: (...ks) => ks.reduce((n, k) => n + (store.delete(k) ? 1 : 0), 0),
     mget: (...ks) => ks.map((k) => store.get(k) ?? null),
-    lpush: (k, ...vs) => {
-      const list = lists.get(k) ?? [];
-      for (const v of vs) list.unshift(v);
-      lists.set(k, list);
-      return list.length;
-    },
-    ltrim: (k, start, stop) => { lists.set(k, (lists.get(k) ?? []).slice(Number(start), Number(stop) + 1)); return 'OK'; },
     lrange: (k, start, stop) => (lists.get(k) ?? []).slice(Number(start), Number(stop) + 1),
     ping: () => 'PONG',
   };

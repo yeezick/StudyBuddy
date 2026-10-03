@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { store } from '../store/index.js';
+import { redis } from '../redis.js';
 import { boltApp } from './app.js';
 import { getConcepts } from '../lib/concepts.js';
 import { generateQuestions } from '../ai/questionGen.js';
@@ -29,8 +29,19 @@ export function registerQuizCompletion(quizId, cb) {
   quizCompletionCallbacks.set(quizId, cb);
 }
 
-const loadQuiz = (quizId) => store.getQuiz(quizId);
-const saveQuiz = (quiz) => store.saveQuiz(quiz);
+function quizKey(quizId) {
+  return `quiz:${quizId}`;
+}
+
+async function loadQuiz(quizId) {
+  const raw = await redis.get(quizKey(quizId));
+  if (!raw) return null;
+  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+}
+
+async function saveQuiz(quiz) {
+  await redis.set(quizKey(quiz.quizId), JSON.stringify(quiz));
+}
 
 const OPTION_EMOJI = ['\u{1F1E6}', '\u{1F1E7}', '\u{1F1E8}', '\u{1F1E9}'];
 
@@ -265,8 +276,9 @@ async function completeQuiz(client, quiz) {
     conceptIds: [...new Set(quiz.questions.map((q) => q.conceptId))],
     completedAt: quiz.completedAt,
   };
-  await store.addHistory(userId, historyEntry);
-  await store.clearActiveQuizId(userId);
+  await redis.lpush(`history:${userId}`, JSON.stringify(historyEntry));
+  await redis.ltrim(`history:${userId}`, 0, 29);
+  await redis.del(`active-quiz:${userId}`);
 }
 
 async function selectConcepts(userId, input) {
@@ -282,12 +294,12 @@ async function selectConcepts(userId, input) {
 }
 
 export async function cancelQuiz(userId) {
-  const quizId = await store.getActiveQuizId(userId);
+  const quizId = await redis.get(`active-quiz:${userId}`);
   if (!quizId) return false;
 
   const quiz = await loadQuiz(quizId);
   if (!quiz || quiz.status !== 'in_progress') {
-    await store.clearActiveQuizId(userId);
+    await redis.del(`active-quiz:${userId}`);
     return false;
   }
 
@@ -304,8 +316,8 @@ export async function cancelQuiz(userId) {
     if (key.startsWith(`${quizId}:`)) pendingFreeTextConfidence.delete(key);
   }
 
-  await store.deleteQuiz(quizId);
-  await store.clearActiveQuizId(userId);
+  await redis.del(quizKey(quizId));
+  await redis.del(`active-quiz:${userId}`);
   return true;
 }
 
@@ -367,7 +379,7 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
   };
 
   await saveQuiz(quiz);
-  await store.setActiveQuizId(userId, quizId);
+  await redis.set(`active-quiz:${userId}`, quizId);
   await postQuestion(client, quiz, 0);
   return quiz;
 }
