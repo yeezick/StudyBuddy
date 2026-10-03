@@ -1,6 +1,6 @@
 import { store } from '../store/index.js';
 import { defaultMastery, updateMastery, scoreFor, QUALITY_FOR_GRADE } from './sm2.js';
-import { isFsrsCard, fsrsFieldsFromSm2, reviewFsrs } from './fsrs.js';
+import { isFsrsCard, fsrsFieldsFromSm2, reviewFsrs, retrievabilityAt } from './fsrs.js';
 
 // A card (`cards.state`) holds the FSRS fields at the top level, the SM-2 state under `sm2`,
 // and the fields every reader uses: score, nextReviewAt (= the active scheduler's due),
@@ -88,4 +88,32 @@ export async function applyQuestionResult(userId, conceptId, grade, now = new Da
   const transition = reviewCard(current, grade, now);
   await setMastery(userId, transition.next);
   return transition;
+}
+
+// ── Read-side views of a card (DEC-056) ──────────────────────────────────────────
+
+// Stability (days) at which a memory counts as settled.
+export const SETTLED_STABILITY_DAYS = 21;
+
+// Mastery shown by /mastery and the weekly digest, computed on read (nothing stored changes).
+// FSRS: recall probability now × how settled the memory is, R × min(1, S / 21); new card 0.
+// SCHEDULER=sm2 keeps the pre-FSRS score stored on the card, min(1, reps × 0.15).
+export function masteryScore(card, now = new Date(), scheduler = schedulerName()) {
+  if (!card) return 0;
+  if (scheduler === 'sm2') return card.score ?? 0;
+  const fsrsCard = normalizeCard(card, now);
+  const r = retrievabilityAt(fsrsCard, now);
+  if (r == null) return 0;
+  return r * Math.min(1, fsrsCard.stability / SETTLED_STABILITY_DAYS);
+}
+
+// FSRS short-term steps (1m, 10m) put a card "due" minutes after a review. Due lists ignore
+// those: a card counts as due no earlier than 1 h after its last review (DEC-056 §2).
+export const SHORT_TERM_DUE_MS = 60 * 60 * 1000;
+
+export function isDue(card, now = new Date()) {
+  if (!card?.nextReviewAt) return false;
+  let due = Date.parse(card.nextReviewAt);
+  if (card.lastReviewedAt) due = Math.max(due, Date.parse(card.lastReviewedAt) + SHORT_TERM_DUE_MS);
+  return due <= now.getTime();
 }

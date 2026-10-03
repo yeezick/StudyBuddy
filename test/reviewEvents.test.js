@@ -113,7 +113,8 @@ test('T3-1/2: a full MCQ quiz writes one event per answer with confidence, grade
   assert.ok(first.nextState.stability > second.nextState.stability, 'Easy grows stability more than Again');
   const [card1] = await store.getCards(USER, ['c1']);
   const { conceptId: _c, ...savedState } = card1;
-  assert.deepEqual({ ...savedState, retrievability_at_review: null }, first.nextState);
+  assert.deepEqual({ ...savedState, retrievability_at_review: null, idle_latency: false }, first.nextState);
+  assert.equal(second.nextState.idle_latency, false, 'T4b-4: a few seconds is not idle');
   assert.equal(card1.nextReviewAt, card1.due);
 
   // The quiz still completed normally.

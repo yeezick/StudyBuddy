@@ -16,7 +16,8 @@ export function defaultMastery(conceptId) {
 // The 1–4 grade (gradeFor) → the SM-2 quality it stands for. Again resets the card.
 export const QUALITY_FOR_GRADE = { 1: 1, 2: 3, 3: 4, 4: 5 };
 
-// The mastery score shown by /mastery and the weekly digest (unchanged by FSRS, T4-6).
+// The pre-FSRS mastery score, still stored on every card; /mastery shows it only under
+// SCHEDULER=sm2 (masteryScore in mastery.js, DEC-056).
 export function scoreFor(repetitions) {
   return Math.min(1.0, repetitions * 0.15);
 }

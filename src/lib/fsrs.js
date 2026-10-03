@@ -65,10 +65,17 @@ export function fsrsFieldsFromSm2(sm2, now = new Date()) {
   };
 }
 
+// Recall probability of a stored FSRS card at `now`; null for a new card. ts-fsrs counts
+// elapsed time in whole days, so a card reviewed earlier the same day reads 1.
+export function retrievabilityAt(card, now = new Date()) {
+  const c = toFsrsCard(card);
+  return c.state === State.New ? null : scheduler.get_retrievability(c, now, false);
+}
+
 // One FSRS review. Retrievability is the recall probability at answer time (null for a new card).
 export function reviewFsrs(card, grade, now) {
   const before = toFsrsCard(card);
-  const retrievability = before.state === State.New ? null : scheduler.get_retrievability(before, now, false);
+  const retrievability = retrievabilityAt(card, now);
   const { card: after } = scheduler.next(before, now, grade);
   return { fields: fromFsrsCard(after), retrievability };
 }

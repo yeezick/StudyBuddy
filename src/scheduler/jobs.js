@@ -2,7 +2,7 @@ import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { store } from '../store/index.js';
 import { getConcepts } from '../lib/concepts.js';
-import { getAllMastery } from '../lib/mastery.js';
+import { getAllMastery, isDue } from '../lib/mastery.js';
 import { getDMChannel } from '../slack/dm.js';
 import { startQuiz } from '../slack/quizFlow.js';
 import { buildMasterySnapshot, formatWeeklyDigestBlocks } from '../slack/masteryFlow.js';
@@ -160,10 +160,7 @@ async function selectPingConcepts(userId) {
   const now = new Date();
 
   const overdue = concepts
-    .filter((_, i) => {
-      const nr = masteryObjects[i].nextReviewAt;
-      return nr && new Date(nr) <= now;
-    })
+    .filter((_, i) => isDue(masteryObjects[i], now))
     .slice(0, 3);
 
   const overdueIds = new Set(overdue.map((c) => c.id));

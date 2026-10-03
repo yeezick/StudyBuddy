@@ -12,10 +12,19 @@ export function latencyMs(q) {
   return Number.isFinite(ms) && ms >= 0 ? Math.round(ms) : null;
 }
 
+// An answer slower than this was probably not timed on the question (tab left open, Slack not
+// rendering). Raw latency is kept; the flag tells speed-based rules to skip it (DEC-056 §3).
+export const IDLE_LATENCY_MS = 5 * 60 * 1000;
+
+export function isIdleLatency(ms) {
+  return ms == null ? null : ms > IDLE_LATENCY_MS;
+}
+
 // Card state as logged on an event: the card without its id.
 const snapshot = ({ conceptId: _c, ...state }) => state;
 
 export function buildReviewEvent(quiz, q, transition = null) {
+  const latency = latencyMs(q);
   return {
     userId: quiz.userId,
     conceptId: q.conceptId,
@@ -26,11 +35,11 @@ export function buildReviewEvent(quiz, q, transition = null) {
     correct: q.isCorrect,
     score: q.pointsEarned ?? null,
     confidence: q.confidenceRating ?? null,
-    latencyMs: latencyMs(q),
+    latencyMs: latency,
     grade: gradeFor(q),
     prevState: transition ? snapshot(transition.prev) : null,
     nextState: transition
-      ? { ...snapshot(transition.next), retrievability_at_review: transition.retrievability }
+      ? { ...snapshot(transition.next), retrievability_at_review: transition.retrievability, idle_latency: isIdleLatency(latency) }
       : null,
   };
 }
