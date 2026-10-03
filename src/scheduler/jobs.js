@@ -24,27 +24,41 @@ export function redisRetryDelay(times, maxRetries = REDIS_MAX_RETRIES) {
   return Math.min(times * 1000, 30000);
 }
 
-function createConnection() {
-  if (!process.env.REDIS_URL) {
+// Exit non-zero so Railway's ON_FAILURE policy restarts the service (railway.json caps it at 10).
+function exitForRestart() {
+  process.exit(1);
+}
+
+export function createConnection({
+  url = process.env.REDIS_URL,
+  maxRetries = REDIS_MAX_RETRIES,
+  retryDelay = redisRetryDelay,
+  onGiveUp = exitForRestart,
+} = {}) {
+  if (!url) {
     throw new Error('Missing REDIS_URL. Scheduler disabled — set it to the Upstash ioredis connection string.');
   }
   let lastError = 'unknown';
   let lastLoggedRetry = 0; // BullMQ duplicates this connection; log each retry step once
+  let gaveUp = false;
   let started = false;
-  const conn = new IORedis(process.env.REDIS_URL, {
+  const conn = new IORedis(url, {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     retryStrategy(times) {
-      const delay = redisRetryDelay(times);
+      const delay = retryDelay(times, maxRetries);
+      if (delay === null) {
+        if (gaveUp) return null;
+        gaveUp = true;
+        console.error(`[scheduler:redis] giving up after ${maxRetries} retries | last error: ${lastError} | exiting so the platform restarts the service`);
+        setDep('scheduler', 'error', `redis unreachable: ${lastError}`);
+        onGiveUp();
+        return null;
+      }
       const firstToLog = times !== lastLoggedRetry;
       lastLoggedRetry = times;
       if (!firstToLog) return delay;
-      if (delay === null) {
-        console.error(`[scheduler:redis] giving up after ${REDIS_MAX_RETRIES} retries | last error: ${lastError} | scheduled pings and session timers are OFF until restart`);
-        setDep('scheduler', 'error', `redis unreachable: ${lastError}`);
-        return null;
-      }
-      console.warn(`[scheduler:redis] connection failed (${lastError}) — retry ${times}/${REDIS_MAX_RETRIES} in ${delay / 1000}s`);
+      console.warn(`[scheduler:redis] connection failed (${lastError}) — retry ${times}/${maxRetries} in ${delay / 1000}s`);
       if (started) setDep('scheduler', 'reconnecting', lastError);
       return delay;
     },
