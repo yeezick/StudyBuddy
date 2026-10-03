@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
+import { testDbEnabled, assertLocalTestDb, pgEnv } from './helpers/testDb.js';
 
 const ENTRY = new URL('../src/index.js', import.meta.url).pathname;
 
@@ -75,4 +76,37 @@ test('S0-1: production boot without MCP_AUTH_TOKEN exits non-zero', async () => 
   clearTimeout(killer);
   assert.notEqual(code, 0);
   assert.match(output(), /MCP_AUTH_TOKEN/);
+});
+
+test('T1-5: boot with STORE_BACKEND=postgres migrates, seeds through the store and reports it', { skip: !testDbEnabled() && 'TEST_POSTGRES unset' }, async () => {
+  assertLocalTestDb();
+  const { default: pg } = await import('pg');
+  const schema = `t1_boot_${process.pid}`;
+  const admin = new pg.Pool({ max: 1 });
+  await admin.query(`CREATE SCHEMA ${schema}`);
+
+  const port = await freePort();
+  // The child gets a minimal env: hand it the PG* connection variables plus its own schema.
+  const { child, output } = boot({ ...pgEnv(), PGOPTIONS: `-c search_path=${schema}`, PORT: String(port), STORE_BACKEND: 'postgres' });
+  try {
+    await pollHealth(port, 2000);
+    let body;
+    for (let i = 0; i < 50; i++) {
+      body = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
+      if (body.deps.seed?.state === 'ok' || body.deps.seed?.state === 'error') break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.equal(body.storeBackend, 'postgres');
+    assert.equal(body.deps.store.state, 'ok', JSON.stringify(body.deps.store));
+    assert.equal(body.deps.seed.state, 'ok', JSON.stringify(body.deps.seed));
+    const { rows } = await admin.query(`SELECT COUNT(*)::int AS n FROM ${schema}.concepts`);
+    assert.ok(rows[0].n > 0, 'example seed written to Postgres');
+  } catch (err) {
+    err.message += `\n--- server output ---\n${output()}`;
+    throw err;
+  } finally {
+    child.kill();
+    await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    await admin.end();
+  }
 });

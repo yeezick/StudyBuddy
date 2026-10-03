@@ -1,6 +1,6 @@
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { redis } from '../redis.js';
+import { store } from '../store/index.js';
 import { getConcepts } from '../lib/concepts.js';
 import { getAllMastery } from '../lib/mastery.js';
 import { getDMChannel } from '../slack/dm.js';
@@ -76,8 +76,7 @@ export function createConnection({
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 export async function getSettings(userId) {
-  const raw = await redis.get(`settings:${userId}`);
-  const stored = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {};
+  const stored = (await store.getSettings(userId)) ?? {};
   return {
     pingEnabled: true,
     pingWindowStart: '09:00',
@@ -244,17 +243,11 @@ async function handleWeeklyDigest(job) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400000)
       .toISOString()
       .slice(0, 10);
-    const prevRaw = await redis.get(`mastery-snapshot:${userId}:${sevenDaysAgo}`);
-    const previousSnapshot = prevRaw
-      ? (typeof prevRaw === 'string' ? JSON.parse(prevRaw) : prevRaw)
-      : null;
+    const previousSnapshot = await store.getMasterySnapshot(userId, sevenDaysAgo);
 
     // Weekly stats from history
     const cutoff = new Date(Date.now() - 7 * 86400000).toISOString();
-    const historyRaw = await redis.lrange(`history:${userId}`, 0, 29);
-    const weekEntries = historyRaw
-      .map((r) => (typeof r === 'string' ? JSON.parse(r) : r))
-      .filter((e) => e.completedAt >= cutoff);
+    const weekEntries = (await store.getHistory(userId, 30)).filter((e) => e.completedAt >= cutoff);
 
     const quizCount = weekEntries.length;
     const conceptsTested = new Set(weekEntries.flatMap((e) => e.conceptIds ?? [])).size;
@@ -281,7 +274,7 @@ async function handleDailySnapshot(job) {
       date,
       modules: snapshot.modules.map(({ name, avg }) => ({ name, avg })),
     };
-    await redis.set(`mastery-snapshot:${userId}:${date}`, JSON.stringify(record));
+    await store.saveMasterySnapshot(userId, date, record);
     console.log(`[scheduler] Daily snapshot written for ${userId} on ${date}`);
   } catch (err) {
     console.error(`[scheduler:daily-snapshot] error | userId=${userId} | ${err.message}`);
