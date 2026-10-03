@@ -130,6 +130,23 @@ export function createMcpServer() {
     }
   );
 
+  // get_reviews (read-only)
+  mcp.tool(
+    'get_reviews',
+    'Returns the user\'s review events (one per graded answer), newest first. Optional topicId and since (ISO timestamp, inclusive) filters.',
+    {
+      userId: z.string(),
+      topicId: z.string().optional(),
+      since: z.iso.datetime({ offset: true }).optional(),
+      limit: z.number().int().min(1).max(500).optional(),
+    },
+    async ({ userId, topicId, since, limit = 50 }) => {
+      validateUser(userId);
+      const events = await store.getReviewEvents(userId, { topicId, since, limit });
+      return { content: [{ type: 'text', text: JSON.stringify(events) }] };
+    }
+  );
+
   return mcp;
 }
 

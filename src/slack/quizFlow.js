@@ -6,7 +6,7 @@ import { generateQuestions } from '../ai/questionGen.js';
 import { gradeMCQ, gradeFreeText } from '../ai/grading.js';
 import { matchConceptsToPrompt } from '../ai/conceptMatch.js';
 import { applyQuestionResult } from '../lib/mastery.js';
-import { qualityScoreFromMCQ, qualityScoreFromFreeText } from '../lib/sm2.js';
+import { qualityOf, recordReview } from '../lib/reviewEvents.js';
 
 const ON_DEMAND_DISTRIBUTION = { mcq: 0.6, short_answer: 0.2, explain: 0.2 };
 const MAX_QUESTIONS = 10;
@@ -155,10 +155,14 @@ function freetextResultBlocks(questionNum, total, gradeResult, confidenceLevel) 
   ];
 }
 
+// Saves the quiz with the question's shownAt first, so answer latency survives a restart.
 async function postQuestion(client, quiz, index) {
   const q = quiz.questions[index];
   const questionNum = index + 1;
   const total = quiz.questions.length;
+
+  q.shownAt = new Date().toISOString();
+  await saveQuiz(quiz);
 
   if (q.type === 'mcq') {
     await client.chat.postMessage({
@@ -177,6 +181,7 @@ async function postQuestion(client, quiz, index) {
   const pendingKey = `${quiz.slackUserId}:${quiz.slackChannelId}`;
   pendingReplies.set(pendingKey, async (messageText) => {
     pendingReplies.delete(pendingKey);
+    const answeredAt = new Date().toISOString(); // before grading, which takes seconds
 
     const freshQuiz = await loadQuiz(quiz.quizId);
     if (!freshQuiz || freshQuiz.status !== 'in_progress') return;
@@ -185,9 +190,10 @@ async function postQuestion(client, quiz, index) {
     const gradeResult = await gradeFreeText(freshQ, messageText);
 
     freshQ.userAnswer = messageText;
+    freshQ.answeredAt = answeredAt;
     freshQ.isCorrect = gradeResult.isCorrect;
     freshQ.pointsEarned = gradeResult.score;
-    // confidenceRating and sm2Applied stay null/false until confidence tap
+    // confidenceRating, sm2Applied and the review event wait for the confidence tap
 
     await saveQuiz(freshQuiz);
 
@@ -219,14 +225,9 @@ async function completeQuiz(client, quiz) {
   const { userId } = quiz;
 
   for (const q of answered) {
+    await recordReview(quiz, q);
     if (q.sm2Applied) continue;
-    let qualityScore;
-    if (q.type === 'mcq') {
-      qualityScore = qualityScoreFromMCQ(q.isCorrect, q.confidenceRating ?? 2);
-    } else {
-      qualityScore = qualityScoreFromFreeText(q.pointsEarned ?? 0, q.confidenceRating ?? 2);
-    }
-    await applyQuestionResult(userId, q.conceptId, qualityScore);
+    await applyQuestionResult(userId, q.conceptId, qualityOf(q));
   }
 
   const concepts = await getConcepts(userId);
@@ -291,12 +292,13 @@ export async function cancelQuiz(userId) {
     return false;
   }
 
+  // Graded answers still count: a free-text answer awaiting its confidence tap is recorded
+  // with confidence null.
   for (const q of quiz.questions) {
-    if (q.isCorrect === null || q.sm2Applied) continue;
-    const qualityScore = q.type === 'mcq'
-      ? qualityScoreFromMCQ(q.isCorrect, q.confidenceRating ?? 2)
-      : qualityScoreFromFreeText(q.pointsEarned ?? 0, q.confidenceRating ?? 2);
-    await applyQuestionResult(userId, q.conceptId, qualityScore);
+    if (q.isCorrect === null) continue;
+    await recordReview(quiz, q);
+    if (q.sm2Applied) continue;
+    await applyQuestionResult(userId, q.conceptId, qualityOf(q));
   }
 
   pendingReplies.delete(`${quiz.slackUserId}:${quiz.slackChannelId}`);
@@ -348,6 +350,9 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
     confidenceRating: null,
     pointsEarned: null,
     sm2Applied: false,
+    shownAt: null,
+    answeredAt: null,
+    reviewRecorded: false,
   }));
 
   const quizId = crypto.randomUUID();
@@ -372,122 +377,128 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
   return quiz;
 }
 
+// Bolt action handlers, exported so tests can drive a quiz without Slack.
+export async function onQuizConfidence({ ack, body, client }) {
+  await ack();
+  try {
+    const { quizId, questionId, level } = JSON.parse(body.actions[0].value);
+    const quiz = await loadQuiz(quizId);
+    if (!quiz || quiz.status !== 'in_progress') return;
+
+    const idx = quiz.questions.findIndex((q) => q.id === questionId);
+    const q = quiz.questions[idx];
+    if (!q || q.confidenceRating !== null) return;
+
+    q.confidenceRating = level;
+    await saveQuiz(quiz);
+
+    await client.chat.update({
+      channel: body.channel.id,
+      ts: body.message.ts,
+      blocks: answerBlocks(quizId, q, idx + 1, quiz.questions.length, level),
+      text: `Q${idx + 1}/${quiz.questions.length}: ${q.prompt}`,
+    });
+  } catch (err) {
+    console.error(`[quiz_confidence] error | slackUser=${body.user?.id} | ${err.message}`);
+    await client.chat.postEphemeral({ channel: body.channel.id, user: body.user.id, text: '⚠️ Something went wrong. Please try again.' }).catch(() => {});
+  }
+}
+
+export async function onQuizAnswer({ ack, body, client }) {
+  await ack();
+  try {
+    const { quizId, questionId, letter, confidenceLevel } = JSON.parse(body.actions[0].value);
+    const quiz = await loadQuiz(quizId);
+    if (!quiz || quiz.status !== 'in_progress') return;
+
+    const idx = quiz.questions.findIndex((q) => q.id === questionId);
+    const q = quiz.questions[idx];
+    if (!q || q.isCorrect !== null) return;
+
+    if (q.confidenceRating === null) {
+      await client.chat.postEphemeral({
+        channel: body.channel.id,
+        user: body.user.id,
+        text: 'Please select a confidence level before answering.',
+      });
+      return;
+    }
+
+    const answeredAt = new Date().toISOString();
+    const gradeResult = gradeMCQ(q, letter);
+    q.userAnswer = letter;
+    q.answeredAt = answeredAt;
+    q.isCorrect = gradeResult.isCorrect;
+    q.pointsEarned = gradeResult.score;
+    await recordReview(quiz, q);
+
+    await client.chat.update({
+      channel: body.channel.id,
+      ts: body.message.ts,
+      blocks: resultBlocks(q, idx + 1, quiz.questions.length, gradeResult, confidenceLevel),
+      text: `Q${idx + 1}/${quiz.questions.length}: ${q.prompt}`,
+    });
+
+    const nextIndex = idx + 1;
+    if (nextIndex >= quiz.questions.length) {
+      await saveQuiz(quiz);
+      await completeQuiz(client, quiz);
+    } else {
+      quiz.currentQuestionIndex = nextIndex;
+      await postQuestion(client, quiz, nextIndex);
+    }
+  } catch (err) {
+    console.error(`[quiz_answer] error | slackUser=${body.user?.id} | ${err.message}`);
+    await client.chat.postEphemeral({ channel: body.channel.id, user: body.user.id, text: '⚠️ Something went wrong. Please try again.' }).catch(() => {});
+  }
+}
+
+export async function onFreeTextConfidence({ ack, body, client }) {
+  await ack();
+  try {
+    const { quizId, questionId, level } = JSON.parse(body.actions[0].value);
+
+    const pendingKey = `${quizId}:${questionId}`;
+    const pending = pendingFreeTextConfidence.get(pendingKey);
+    if (!pending) return;
+    pendingFreeTextConfidence.delete(pendingKey);
+
+    const { gradeResult, index } = pending;
+
+    const quiz = await loadQuiz(quizId);
+    if (!quiz || quiz.status !== 'in_progress') return;
+
+    const q = quiz.questions[index];
+    q.confidenceRating = level;
+    q.sm2Applied = true;
+    await recordReview(quiz, q);
+
+    await saveQuiz(quiz);
+
+    await applyQuestionResult(quiz.userId, q.conceptId, qualityOf(q));
+
+    await client.chat.update({
+      channel: body.channel.id,
+      ts: body.message.ts,
+      blocks: freetextResultBlocks(index + 1, quiz.questions.length, gradeResult, level),
+      text: gradeResult.isCorrect ? '\u2705 Correct' : '\u274c Incorrect',
+    });
+
+    const nextIndex = index + 1;
+    if (nextIndex >= quiz.questions.length) {
+      await completeQuiz(client, quiz);
+    } else {
+      quiz.currentQuestionIndex = nextIndex;
+      await postQuestion(client, quiz, nextIndex);
+    }
+  } catch (err) {
+    console.error(`[quiz_freetext_confidence] error | slackUser=${body.user?.id} | ${err.message}`);
+    await client.chat.postEphemeral({ channel: body.channel.id, user: body.user.id, text: '⚠️ Something went wrong. Please try again.' }).catch(() => {});
+  }
+}
+
 export function registerQuizHandlers() {
-  boltApp.action(/^quiz_confidence_\d$/, async ({ ack, body, client }) => {
-    await ack();
-    try {
-      const { quizId, questionId, level } = JSON.parse(body.actions[0].value);
-      const quiz = await loadQuiz(quizId);
-      if (!quiz || quiz.status !== 'in_progress') return;
-
-      const idx = quiz.questions.findIndex((q) => q.id === questionId);
-      const q = quiz.questions[idx];
-      if (!q || q.confidenceRating !== null) return;
-
-      q.confidenceRating = level;
-      await saveQuiz(quiz);
-
-      await client.chat.update({
-        channel: body.channel.id,
-        ts: body.message.ts,
-        blocks: answerBlocks(quizId, q, idx + 1, quiz.questions.length, level),
-        text: `Q${idx + 1}/${quiz.questions.length}: ${q.prompt}`,
-      });
-    } catch (err) {
-      console.error(`[quiz_confidence] error | slackUser=${body.user?.id} | ${err.message}`);
-      await client.chat.postEphemeral({ channel: body.channel.id, user: body.user.id, text: '⚠️ Something went wrong. Please try again.' }).catch(() => {});
-    }
-  });
-
-  boltApp.action(/^quiz_answer_[A-Z]$/, async ({ ack, body, client }) => {
-    await ack();
-    try {
-      const { quizId, questionId, letter, confidenceLevel } = JSON.parse(body.actions[0].value);
-      const quiz = await loadQuiz(quizId);
-      if (!quiz || quiz.status !== 'in_progress') return;
-
-      const idx = quiz.questions.findIndex((q) => q.id === questionId);
-      const q = quiz.questions[idx];
-      if (!q || q.isCorrect !== null) return;
-
-      if (q.confidenceRating === null) {
-        await client.chat.postEphemeral({
-          channel: body.channel.id,
-          user: body.user.id,
-          text: 'Please select a confidence level before answering.',
-        });
-        return;
-      }
-
-      const gradeResult = gradeMCQ(q, letter);
-      q.userAnswer = letter;
-      q.isCorrect = gradeResult.isCorrect;
-      q.pointsEarned = gradeResult.score;
-
-      await client.chat.update({
-        channel: body.channel.id,
-        ts: body.message.ts,
-        blocks: resultBlocks(q, idx + 1, quiz.questions.length, gradeResult, confidenceLevel),
-        text: `Q${idx + 1}/${quiz.questions.length}: ${q.prompt}`,
-      });
-
-      const nextIndex = idx + 1;
-      if (nextIndex >= quiz.questions.length) {
-        await saveQuiz(quiz);
-        await completeQuiz(client, quiz);
-      } else {
-        quiz.currentQuestionIndex = nextIndex;
-        await saveQuiz(quiz);
-        await postQuestion(client, quiz, nextIndex);
-      }
-    } catch (err) {
-      console.error(`[quiz_answer] error | slackUser=${body.user?.id} | ${err.message}`);
-      await client.chat.postEphemeral({ channel: body.channel.id, user: body.user.id, text: '⚠️ Something went wrong. Please try again.' }).catch(() => {});
-    }
-  });
-
-  boltApp.action(/^quiz_freetext_confidence_\d$/, async ({ ack, body, client }) => {
-    await ack();
-    try {
-      const { quizId, questionId, level } = JSON.parse(body.actions[0].value);
-
-      const pendingKey = `${quizId}:${questionId}`;
-      const pending = pendingFreeTextConfidence.get(pendingKey);
-      if (!pending) return;
-      pendingFreeTextConfidence.delete(pendingKey);
-
-      const { gradeResult, index } = pending;
-
-      const quiz = await loadQuiz(quizId);
-      if (!quiz || quiz.status !== 'in_progress') return;
-
-      const q = quiz.questions[index];
-      q.confidenceRating = level;
-      q.sm2Applied = true;
-
-      await saveQuiz(quiz);
-
-      const qualityScore = qualityScoreFromFreeText(q.pointsEarned ?? 0, level);
-      await applyQuestionResult(quiz.userId, q.conceptId, qualityScore);
-
-      await client.chat.update({
-        channel: body.channel.id,
-        ts: body.message.ts,
-        blocks: freetextResultBlocks(index + 1, quiz.questions.length, gradeResult, level),
-        text: gradeResult.isCorrect ? '\u2705 Correct' : '\u274c Incorrect',
-      });
-
-      const nextIndex = index + 1;
-      if (nextIndex >= quiz.questions.length) {
-        await completeQuiz(client, quiz);
-      } else {
-        quiz.currentQuestionIndex = nextIndex;
-        await saveQuiz(quiz);
-        await postQuestion(client, quiz, nextIndex);
-      }
-    } catch (err) {
-      console.error(`[quiz_freetext_confidence] error | slackUser=${body.user?.id} | ${err.message}`);
-      await client.chat.postEphemeral({ channel: body.channel.id, user: body.user.id, text: '⚠️ Something went wrong. Please try again.' }).catch(() => {});
-    }
-  });
+  boltApp.action(/^quiz_confidence_\d$/, onQuizConfidence);
+  boltApp.action(/^quiz_answer_[A-Z]$/, onQuizAnswer);
+  boltApp.action(/^quiz_freetext_confidence_\d$/, onFreeTextConfidence);
 }

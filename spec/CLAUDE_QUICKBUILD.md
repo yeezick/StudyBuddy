@@ -524,6 +524,14 @@ delete_concept({ userId, conceptId })
 get_history({ userId, limit? })
 // Returns last N assessment summaries from history:userId.
 // Default limit 10. Called by Cowork for session prep context.
+
+get_reviews({ userId, topicId?, since?, limit? })
+// Read-only. Review events (one per graded answer), newest first.
+// since = ISO timestamp (inclusive). Default limit 50, max 500.
+// Event: ts, userId, topicId, conceptId, quizId, trigger (on_demand | scheduled_ping |
+// session_warmup | session_wrap), itemType (mcq | free_text), correct, score,
+// confidence (1–3, omitted if none), latencyMs (question shown → answer received),
+// grade (1–4, from the SM-2 quality: <3→1, 3→2, 4→3, 5→4).
 ```
 
 All tools validate that userId matches the configured single-user ID for
