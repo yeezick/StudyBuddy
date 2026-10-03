@@ -70,7 +70,9 @@ test('S0-4: /health answers within 2 s with Redis and Slack unreachable; /mcp ne
 test('S0-1: production boot without MCP_AUTH_TOKEN exits non-zero', async () => {
   const port = await freePort();
   const { child, output } = boot({ PORT: String(port), NODE_ENV: 'production', MCP_AUTH_TOKEN: '' });
+  const killer = setTimeout(() => child.kill(), 5000); // a boot that wrongly succeeds must not linger
   const code = await new Promise((resolve) => child.on('exit', resolve));
+  clearTimeout(killer);
   assert.notEqual(code, 0);
   assert.match(output(), /MCP_AUTH_TOKEN/);
 });
