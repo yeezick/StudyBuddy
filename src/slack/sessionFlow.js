@@ -3,7 +3,8 @@ import { redis } from '../redis.js';
 import { boltApp } from './app.js';
 import { getConcepts } from '../lib/concepts.js';
 import { startQuiz, registerQuizCompletion } from './quizFlow.js';
-import { scheduleJob, removeJob } from '../scheduler/jobs.js';
+import { scheduleJob, removeJob, getSettings } from '../scheduler/jobs.js';
+import { nextLocalTime } from '../lib/time.js';
 
 const SEGMENT_MINUTES = 45;
 const SYNTH_WARNING_MINUTES = 40;
@@ -11,6 +12,11 @@ const BREAK_PATTERNS = [/\bbreak\b/i, /\bstepping away\b/i, /\bbrb\b/i, /\bpause
 const DURATION_PATTERN = /\b(\d+)\s*(min|minute)s?\b/i;
 
 const pendingReplies = new Map();
+
+// The handler waiting for this user's session reply in this channel, if any (consumed by messageRouter).
+export function pendingSessionReply(slackUserId, channelId) {
+  return pendingReplies.get(`${slackUserId}:${channelId}`) ?? null;
+}
 
 // ── Pure helpers (exported for testing) ──────────────────────────────────────
 
@@ -462,7 +468,7 @@ export async function handleSessionWrapMorning(client, userId, sessionId) {
 
 // ── Dynamic break detection ───────────────────────────────────────────────────
 
-async function handleBreakDetection(client, userId, channelId, text) {
+export async function handleBreakDetection(client, userId, channelId, text) {
   const session = await loadSession(userId);
   if (!session || session.status !== 'active') return;
   if (session.slackChannelId !== channelId) return;
@@ -498,26 +504,6 @@ async function handleBreakDetection(client, userId, channelId, text) {
 // ── Bolt handlers ─────────────────────────────────────────────────────────────
 
 export function registerSessionHandlers() {
-  const userId = process.env.SINGLE_USER_ID;
-
-  boltApp.message(async ({ message, client }) => {
-    if (message.subtype) return;
-    const text = message.text ?? '';
-    const channelId = message.channel;
-    const msgUserId = message.user;
-
-    const pendingKey = `${msgUserId}:${channelId}`;
-    const handler = pendingReplies.get(pendingKey);
-    if (handler) {
-      await handler(text);
-      return;
-    }
-
-    if (isBreakMessage(text)) {
-      await handleBreakDetection(client, userId, channelId, text);
-    }
-  });
-
   boltApp.action('session_wrap_now', async ({ ack, body, client }) => {
     await ack();
     try {
@@ -538,10 +524,9 @@ export function registerSessionHandlers() {
     try {
       const { userId: uid, sessionId } = JSON.parse(body.actions[0].value);
 
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(8, 30, 0, 0);
-      const delay = Math.max(0, tomorrow.getTime() - Date.now());
+      // Next morningQuizTime (08:30) on the user's clock — not the server's, which is UTC on Railway.
+      const { morningQuizTime, timezone } = await getSettings(uid);
+      const delay = Math.max(0, nextLocalTime(morningQuizTime, timezone).getTime() - Date.now());
 
       await scheduleJob('session-wrap-morning', { userId: uid, sessionId }, {
         jobId: `session-wrap-morning__${uid}`,

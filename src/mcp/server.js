@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { redis } from '../redis.js';
 import { getConcepts } from '../lib/concepts.js';
 import { getAllMastery } from '../lib/mastery.js';
+import { conceptShape, conceptUpdatesShape, mergeNewConcepts, applyConceptUpdate } from './conceptOps.js';
 
 function validateUser(userId) {
   const singleUser = process.env.SINGLE_USER_ID;
@@ -16,18 +17,6 @@ function validateUser(userId) {
 
 export const mcp = new McpServer({ name: 'StudyAgent', version: '0.1.0' });
 
-const conceptShape = z.object({
-  id: z.string(),
-  name: z.string(),
-  summary: z.string(),
-  scope: z.object({
-    course: z.string().optional(),
-    module: z.string().optional(),
-    lesson: z.string().optional(),
-  }).optional(),
-  tags: z.array(z.string()).optional(),
-});
-
 // add_concepts
 mcp.tool(
   'add_concepts',
@@ -39,9 +28,7 @@ mcp.tool(
   async ({ userId, concepts }) => {
     validateUser(userId);
     const existing = await getConcepts(userId);
-    const existingIds = new Set(existing.map((c) => c.id));
-    const added = concepts.filter((c) => !existingIds.has(c.id));
-    const merged = [...existing, ...added];
+    const { added, merged } = mergeNewConcepts(existing, concepts);
     await redis.set(`concepts:${userId}`, JSON.stringify(merged));
     return {
       content: [{ type: 'text', text: JSON.stringify({ added: added.length, total: merged.length }) }],
@@ -85,20 +72,11 @@ mcp.tool(
 // update_concept
 mcp.tool(
   'update_concept',
-  'Patch a single concept (name, summary, tags, or scope).',
+  'Patch a single concept (name, summary, tags, or scope). Scope fields are merged, so omitted ones are kept.',
   {
     userId: z.string(),
     conceptId: z.string(),
-    updates: z.object({
-      name: z.string().optional(),
-      summary: z.string().optional(),
-      tags: z.array(z.string()).optional(),
-      scope: z.object({
-        course: z.string().optional(),
-        module: z.string().optional(),
-        lesson: z.string().optional(),
-      }).optional(),
-    }),
+    updates: conceptUpdatesShape,
   },
   async ({ userId, conceptId, updates }) => {
     validateUser(userId);
@@ -110,7 +88,7 @@ mcp.tool(
         content: [{ type: 'text', text: `Concept ${conceptId} not found` }],
       };
     }
-    concepts[idx] = { ...concepts[idx], ...updates };
+    concepts[idx] = applyConceptUpdate(concepts[idx], updates);
     await redis.set(`concepts:${userId}`, JSON.stringify(concepts));
     return { content: [{ type: 'text', text: JSON.stringify(concepts[idx]) }] };
   }
@@ -161,8 +139,9 @@ mcp.tool(
 
 const transports = new Map();
 
-export function mountMcp(app) {
-  app.get('/mcp/sse', async (req, res) => {
+// `auth` guards both routes (requireBearer in production wiring).
+export function mountMcp(app, auth) {
+  app.get('/mcp/sse', auth, async (req, res) => {
     const transport = new SSEServerTransport('/mcp/messages', res);
     transports.set(transport.sessionId, transport);
     transport.onclose = () => transports.delete(transport.sessionId);
@@ -174,7 +153,7 @@ export function mountMcp(app) {
     }
   });
 
-  app.post('/mcp/messages', async (req, res) => {
+  app.post('/mcp/messages', auth, async (req, res) => {
     const { sessionId } = req.query;
     const transport = transports.get(sessionId);
     if (!transport) {

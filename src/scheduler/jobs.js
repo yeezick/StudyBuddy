@@ -6,17 +6,57 @@ import { getAllMastery } from '../lib/mastery.js';
 import { getDMChannel } from '../slack/dm.js';
 import { startQuiz } from '../slack/quizFlow.js';
 import { buildMasterySnapshot, formatWeeklyDigestBlocks } from '../slack/masteryFlow.js';
+import { setDep } from '../lib/health.js';
 
 const PING_DISTRIBUTION = { mcq: 1.0 };
 const PING_COUNT = 3;
 
-const connection = new IORedis(process.env.REDIS_URL, {
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-});
+const REDIS_MAX_RETRIES = 20;
 
 let queue = null;
 let slackClient = null;
+
+// ── Redis connection (BullMQ) ─────────────────────────────────────────────────
+
+// Linear backoff capped at 30 s; null after maxRetries tells ioredis to stop (~3.5 min total).
+export function redisRetryDelay(times, maxRetries = REDIS_MAX_RETRIES) {
+  if (times > maxRetries) return null;
+  return Math.min(times * 1000, 30000);
+}
+
+function createConnection() {
+  if (!process.env.REDIS_URL) {
+    throw new Error('Missing REDIS_URL. Scheduler disabled — set it to the Upstash ioredis connection string.');
+  }
+  let lastError = 'unknown';
+  let lastLoggedRetry = 0; // BullMQ duplicates this connection; log each retry step once
+  let started = false;
+  const conn = new IORedis(process.env.REDIS_URL, {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+    retryStrategy(times) {
+      const delay = redisRetryDelay(times);
+      const firstToLog = times !== lastLoggedRetry;
+      lastLoggedRetry = times;
+      if (!firstToLog) return delay;
+      if (delay === null) {
+        console.error(`[scheduler:redis] giving up after ${REDIS_MAX_RETRIES} retries | last error: ${lastError} | scheduled pings and session timers are OFF until restart`);
+        setDep('scheduler', 'error', `redis unreachable: ${lastError}`);
+        return null;
+      }
+      console.warn(`[scheduler:redis] connection failed (${lastError}) — retry ${times}/${REDIS_MAX_RETRIES} in ${delay / 1000}s`);
+      if (started) setDep('scheduler', 'reconnecting', lastError);
+      return delay;
+    },
+  });
+  conn.on('error', (err) => { lastError = err.message; });
+  conn.on('ready', () => {
+    lastLoggedRetry = 0;
+    if (started) setDep('scheduler', 'ok');
+  });
+  conn.markStarted = () => { started = true; };
+  return conn;
+}
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
@@ -234,7 +274,7 @@ export async function schedulePing(userId) {
   if (!settings.pingEnabled) return;
 
   const delay = msUntilNextPing(settings);
-  await queue.add('slack-ping', { userId }, {
+  await requireQueue().add('slack-ping', { userId }, {
     jobId: `slack-ping__${userId}`,
     delay,
     removeOnComplete: true,
@@ -244,35 +284,28 @@ export async function schedulePing(userId) {
   console.log(`[scheduler] Next ping for ${userId} in ~${mins} min`);
 }
 
-// Immediately fires a ping quiz for the given userId — bypasses window check and rescheduling.
-// Used by GET /test/ping for smoke testing.
-export async function firePingNow(userId) {
-  if (!slackClient) throw new Error('Scheduler not started — call startScheduler first');
-  const slackUserId = process.env.SLACK_USER_ID;
-  const channelId = await getDMChannel(slackClient, slackUserId);
-  const concepts = await selectPingConcepts(userId);
-  if (concepts.length === 0) {
-    console.log(`[scheduler:test-ping] no concepts for userId=${userId}`);
-    return { ok: false, reason: 'no_concepts' };
-  }
-  await startQuiz(slackClient, userId, slackUserId, channelId, {}, {
-    trigger: 'scheduled_ping',
-    concepts,
-    distribution: PING_DISTRIBUTION,
-    count: PING_COUNT,
-  });
-  console.log(`[scheduler:test-ping] fired ping | userId=${userId} | concepts=${concepts.length}`);
-  return { ok: true, conceptCount: concepts.length };
+const CONNECTION_ERROR_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN']);
+let lastSchedulerError = null;
+
+function logSchedulerError(err) {
+  if (CONNECTION_ERROR_CODES.has(err.code) || err.message === lastSchedulerError) return;
+  lastSchedulerError = err.message;
+  console.error(`[scheduler] ${err.message}`);
+}
+
+function requireQueue() {
+  if (!queue) throw new Error('Scheduler is not running (Redis/BullMQ unavailable) — check /health');
+  return queue;
 }
 
 // For session jobs — idempotent: removes existing job with same ID before adding
 export async function scheduleJob(name, data, opts = {}) {
   if (opts.jobId) await removeJob(opts.jobId);
-  return queue.add(name, data, { removeOnComplete: true, removeOnFail: 5, ...opts });
+  return requireQueue().add(name, data, { removeOnComplete: true, removeOnFail: 5, ...opts });
 }
 
 export async function removeJob(jobId) {
-  const job = await queue.getJob(jobId);
+  const job = await requireQueue().getJob(jobId);
   if (job) await job.remove();
 }
 
@@ -281,7 +314,11 @@ export async function removeJob(jobId) {
 export async function startScheduler(client, userId, sessionHandlers = {}) {
   slackClient = client;
 
+  const connection = createConnection();
   queue = new Queue('studybuddy', { connection });
+  // Connection errors are already reported by retryStrategy; these listeners keep an
+  // 'error' event from crashing the process and surface anything else once.
+  queue.on('error', logSchedulerError);
 
   const worker = new Worker(
     'studybuddy',
@@ -302,6 +339,7 @@ export async function startScheduler(client, userId, sessionHandlers = {}) {
     { connection }
   );
 
+  worker.on('error', logSchedulerError);
   worker.on('failed', (job, err) => {
     console.error(`[scheduler:worker] job failed | name=${job?.name} | id=${job?.id} | userId=${job?.data?.userId ?? 'unknown'} | ${err.message}`);
   });
@@ -329,5 +367,6 @@ export async function startScheduler(client, userId, sessionHandlers = {}) {
   // Initial ping (idempotent — jobId prevents duplicates)
   await schedulePing(userId);
 
+  connection.markStarted();
   console.log(`[scheduler] Started for ${userId}`);
 }
