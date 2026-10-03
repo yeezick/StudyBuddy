@@ -1,11 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { z } from 'zod';
-import { redis } from '../redis.js';
+import { store } from '../store/index.js';
 import { getConcepts } from '../lib/concepts.js';
 import { getAllMastery } from '../lib/mastery.js';
 import { isKnownUser } from '../lib/resolveUser.js';
-import { conceptShape, conceptUpdatesShape, mergeNewConcepts, applyConceptUpdate } from './conceptOps.js';
+import { conceptShape, conceptUpdatesShape } from './conceptOps.js';
 
 function validateUser(userId) {
   if (!isKnownUser(userId)) {
@@ -30,11 +30,9 @@ export function createMcpServer() {
     },
     async ({ userId, concepts }) => {
       validateUser(userId);
-      const existing = await getConcepts(userId);
-      const { added, merged } = mergeNewConcepts(existing, concepts);
-      await redis.set(`concepts:${userId}`, JSON.stringify(merged));
+      const { added, total } = await store.addConcepts(userId, concepts);
       return {
-        content: [{ type: 'text', text: JSON.stringify({ added: added.length, total: merged.length }) }],
+        content: [{ type: 'text', text: JSON.stringify({ added: added.length, total }) }],
       };
     }
   );
@@ -83,17 +81,14 @@ export function createMcpServer() {
     },
     async ({ userId, conceptId, updates }) => {
       validateUser(userId);
-      const concepts = await getConcepts(userId);
-      const idx = concepts.findIndex((c) => c.id === conceptId);
-      if (idx === -1) {
+      const updated = await store.updateConcept(userId, conceptId, updates);
+      if (!updated) {
         return {
           isError: true,
           content: [{ type: 'text', text: `Concept ${conceptId} not found` }],
         };
       }
-      concepts[idx] = applyConceptUpdate(concepts[idx], updates);
-      await redis.set(`concepts:${userId}`, JSON.stringify(concepts));
-      return { content: [{ type: 'text', text: JSON.stringify(concepts[idx]) }] };
+      return { content: [{ type: 'text', text: JSON.stringify(updated) }] };
     }
   );
 
@@ -107,17 +102,15 @@ export function createMcpServer() {
     },
     async ({ userId, conceptId }) => {
       validateUser(userId);
-      const concepts = await getConcepts(userId);
-      const filtered = concepts.filter((c) => c.id !== conceptId);
-      if (filtered.length === concepts.length) {
+      const remaining = await store.deleteConcept(userId, conceptId);
+      if (remaining === null) {
         return {
           isError: true,
           content: [{ type: 'text', text: `Concept ${conceptId} not found` }],
         };
       }
-      await redis.set(`concepts:${userId}`, JSON.stringify(filtered));
       return {
-        content: [{ type: 'text', text: JSON.stringify({ deleted: conceptId, remaining: filtered.length }) }],
+        content: [{ type: 'text', text: JSON.stringify({ deleted: conceptId, remaining }) }],
       };
     }
   );
@@ -132,8 +125,7 @@ export function createMcpServer() {
     },
     async ({ userId, limit = 10 }) => {
       validateUser(userId);
-      const raw = await redis.lrange(`history:${userId}`, 0, limit - 1);
-      const entries = raw.map((r) => (typeof r === 'string' ? JSON.parse(r) : r));
+      const entries = await store.getHistory(userId, limit);
       return { content: [{ type: 'text', text: JSON.stringify(entries) }] };
     }
   );
