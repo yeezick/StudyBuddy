@@ -16,6 +16,15 @@ const card = (conceptId, nextReviewAt = '2026-10-05T12:00:00.000Z') => ({
   conceptId, score: 0.4, easeFactor: 2.36, interval: 6, repetitions: 2, nextReviewAt, lastReviewedAt: '2026-09-29T12:00:00.000Z',
 });
 
+// A card after T4: FSRS fields at the top level, SM-2 kept under `sm2`.
+const fsrsCard = (conceptId) => ({
+  conceptId, scheduler: 'fsrs', score: 0.45, nextReviewAt: '2026-10-20T12:00:00.000Z', lastReviewedAt: '2026-10-04T12:00:00.000Z',
+  due: '2026-10-20T12:00:00.000Z', stability: 16.274931, difficulty: 7.2121, elapsed_days: 0, scheduled_days: 16,
+  learning_steps: 0, reps: 3, lapses: 0, state: 2, last_review: '2026-10-04T12:00:00.000Z',
+  sm2: { easeFactor: 2.5, interval: 15, repetitions: 3, nextReviewAt: '2026-10-19T12:00:00.000Z', lastReviewedAt: '2026-10-04T12:00:00.000Z' },
+  convertedFromSm2At: '2026-10-04T12:00:00.000Z',
+});
+
 export function storeContract(name, makeStore) {
   let store;
   let cleanup;
@@ -80,6 +89,12 @@ export function storeContract(name, makeStore) {
     await store.saveCard('u1', next);
     assert.deepEqual(await store.getCards('u1', ['c2']), [next]);
     assert.deepEqual(await store.getCards('u2', ['c2']), [null]);
+  });
+
+  t('cards: an FSRS card round-trips verbatim and replaces a flat SM-2 card', async () => {
+    await store.saveCard('u1', card('c1'));
+    await store.saveCard('u1', fsrsCard('c1'));
+    assert.deepEqual(await store.getCards('u1', ['c1']), [fsrsCard('c1')]);
   });
 
   t('quizzes: save, load, delete; one active quiz pointer per user', async () => {
@@ -173,6 +188,19 @@ export function storeContract(name, makeStore) {
       { ...read, confidence: read.confidence ?? null, latencyMs: read.latencyMs ?? null },
       { ...full, topicId: appended.topicId },
     );
+  });
+
+  t('review events: prev and next FSRS state round-trip (DEC-054)', async () => {
+    const { conceptId: _c, ...next } = fsrsCard('c1');
+    const prevState = { ...next, reps: 2, stability: 6, due: '2026-10-08T09:00:00.000Z', last_review: '2026-10-02T09:00:00.000Z' };
+    const nextState = { ...next, retrievability_at_review: 0.9573358 };
+    await store.appendReviewEvent({
+      userId: 'u1', conceptId: 'c1', itemType: 'mcq', correct: true, confidence: 2, grade: 3,
+      ts: '2026-10-04T12:00:00.000Z', prevState, nextState,
+    });
+    const [read] = await store.getReviewEvents('u1');
+    assert.deepEqual(read.prevState, prevState);
+    assert.deepEqual(read.nextState, nextState);
   });
 
   t('review events: filter by topic and since, then limit', async () => {

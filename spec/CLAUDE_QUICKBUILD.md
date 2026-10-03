@@ -21,7 +21,7 @@ out of scope for this build.
 - On-demand quizzes via Slack slash commands (scope-based and free-form prompt)
 - Random scheduled quiz pings (spaced retrieval, fires without user initiation)
 - Study session management (timers, segment recalls, dynamic breaks, wrap-up)
-- Mastery tracking per concept using SM-2, persisted in Upstash Redis
+- Mastery tracking per concept using FSRS (SM-2 kept as rollback), persisted through the store
 - Weekly mastery digest every Sunday
 - `/mastery` on-demand snapshot
 - Cowork as the content authoring client — pushes new concepts via MCP tools
@@ -42,7 +42,7 @@ MCP + Slack Bot Server (Node.js, Railway, always on)
     ↓  reads/writes
 Upstash Redis
     ├── concepts:{userId}         — concept library (JSON array)
-    ├── mastery:{userId}:{id}     — per-concept SM-2 state
+    ├── mastery:{userId}:{id}     — per-concept scheduler card (FSRS + SM-2 shadow)
     ├── session:{userId}          — active study session state
     ├── quiz:{quizId}             — active quiz state
     ├── active-quiz:{userId}      — pointer to current quizId (set on start, cleared on complete/cancel)
@@ -171,7 +171,9 @@ studyagent/
     │   └── jobs.js              ← BullMQ job definitions and handlers
     └── lib/
         ├── env.js               ← dotenv loader with override:true (local dev sandbox)
-        ├── sm2.js               ← SM-2 algorithm, pure functions, no Redis
+        ├── fsrs.js              ← FSRS (ts-fsrs) wrapper + SM-2 → FSRS conversion, pure
+        ├── grade.js             ← gradeFor(q): the one 1–4 grade (DEC-053)
+        ├── sm2.js               ← SM-2 algorithm (rollback scheduler), pure functions, no Redis
         ├── mastery.js           ← mastery Redis CRUD (getMastery, setMastery, applyQuestionResult)
         └── concepts.js          ← concept CRUD against Redis
 ```
@@ -197,18 +199,25 @@ All data is JSON serialized. No ODM — raw JSON.stringify / JSON.parse througho
 }
 ```
 
-### Mastery object (key: `mastery:erick:{conceptId}`)
+### Mastery object / card (key: `mastery:erick:{conceptId}`; Postgres `cards.state`)
 ```javascript
 {
   conceptId: "m1-c01",
-  score: 0.45,                   // 0.0–1.0
-  easeFactor: 2.5,               // SM-2 default
-  interval: 6,                   // days until next review
-  repetitions: 3,
-  nextReviewAt: "2026-05-07T09:00:00Z",
-  lastReviewedAt: "2026-05-01T14:22:00Z"
+  scheduler: "fsrs",             // which scheduler wrote it (SCHEDULER)
+  score: 0.45,                   // 0.0–1.0, min(1, sm2.repetitions × 0.15) — the /mastery display
+  nextReviewAt: "2026-05-07T09:00:00Z",   // the active scheduler's due (= cards.due)
+  lastReviewedAt: "2026-05-01T14:22:00Z",
+  // FSRS (ts-fsrs Card), top level
+  due: "2026-05-07T09:00:00Z", stability: 6.0, difficulty: 7.25, state: 2,  // 0 New 1 Learning 2 Review 3 Relearning
+  reps: 3, lapses: 0, last_review: "2026-05-01T14:22:00Z",
+  elapsed_days: 0, scheduled_days: 6, learning_steps: 0,
+  // SM-2, shadow-updated on every review so SCHEDULER=sm2 resumes from current state
+  sm2: { easeFactor: 2.5, interval: 6, repetitions: 3, nextReviewAt: "…", lastReviewedAt: "…" },
+  convertedFromSm2At: "…"        // only on cards converted from the pre-FSRS flat SM-2 shape
 }
 ```
+Cards written before FSRS are flat SM-2 objects (`easeFactor`, `interval`, `repetitions` at the
+top level). They are converted the next time they are scheduled, never in bulk.
 
 ### Quiz state (key: `quiz:{quizId}`)
 ```javascript
@@ -351,11 +360,11 @@ Register all of these as slash commands in the Slack app manifest.
 - Listener captures next DM message as answer, immediately deregisters
 - Answer sent to grading service; grade result is held pending confidence tap
 - Bot posts confidence prompt [Low] [Medium] [High] before revealing grade (DEC-009, DEC-025)
-- On confidence tap: SM-2 quality score computed, feedback + grade posted, next question follows
+- On confidence tap: card scheduled (FSRS) and review event written, feedback + grade posted, next question follows
 
 **On quiz completion:**
 - Mark quiz completed in Redis
-- Run SM-2 updates for all tested concepts
+- Schedule any answered question not yet scheduled (in-flight quizzes from before T4)
 - Post score summary:
   ```
   ✅ Quiz complete — {score}/100  ({correct}/{total} correct)
@@ -531,7 +540,9 @@ get_reviews({ userId, topicId?, since?, limit? })
 // Event: ts, userId, topicId, conceptId, quizId, trigger (on_demand | scheduled_ping |
 // session_warmup | session_wrap), itemType (mcq | free_text), correct, score,
 // confidence (1–3, omitted if none), latencyMs (question shown → answer received),
-// grade (1–4, from the SM-2 quality: <3→1, 3→2, 4→3, 5→4).
+// grade (1–4, gradeFor: wrong→1 Again; right + confidence 1→2 Hard, 2/none→3 Good, 3→4 Easy),
+// prevState / nextState (the card before and after; nextState.retrievability_at_review =
+// FSRS recall probability at answer time, null for a new card or under SCHEDULER=sm2).
 ```
 
 All tools validate that userId matches the configured single-user ID for
@@ -658,50 +669,52 @@ Return 5–10 concept IDs: ["id1", "id2", ...]`;
 
 ---
 
-## SM-2 Algorithm (`src/lib/sm2.js`)
+## Scheduler: FSRS (`src/lib/fsrs.js`, `src/lib/mastery.js`)
+
+FSRS-6 via `ts-fsrs` 5.x: default parameters (no per-user optimizer yet), `request_retention`
+0.90, fuzz on, short-term learning steps on (1m, 10m; relearning 10m).
 
 ```javascript
-function updateMastery(mastery, qualityScore) {
-  // qualityScore 0–5: 0-2 failed, 3 correct/hard, 4 correct/hesitant, 5 correct/confident
-  let { easeFactor, interval, repetitions } = mastery;
+// One grade for the scheduler and the review event (src/lib/grade.js, DEC-053):
+gradeFor(q)  // wrong → 1 Again (any item type)
+             // right + confidence 1 (Guess) → 2 Hard
+             // right + confidence 2 or none → 3 Good
+             // right + confidence 3 (Sure)  → 4 Easy
+             // free-text AI score is logged on the event, never used for the grade
 
-  if (qualityScore < 3) {
-    repetitions = 0;
-    interval = 1;
-  } else {
+reviewAnswer(quiz, q)        // src/lib/reviewEvents.js — on every graded answer:
+  applyQuestionResult(userId, conceptId, gradeFor(q), answeredAt)  // load → reviewCard → save
+  store.appendReviewEvent({ ..., grade, prevState, nextState })     // once per answer
+```
+
+MCQ answers are scheduled when answered; free-text answers on the confidence tap; answers left
+ungraded by a cancelled quiz at cancel time.
+
+**SM-2 → FSRS conversion** (lazy, `fsrsFieldsFromSm2`): a port of fsrs-rs
+`memory_state_from_sm2` with sm2 retention 0.9 —
+`S = interval`, `D = 11 − (EF − 1) / (e^w8 · S^−w9 · (e^(0.1·w10) − 1))` clamped to 1–10,
+`reps` carried over, `state` Review, `due` and `last_review` kept (no reschedule spike).
+A never-reviewed card becomes a new FSRS card.
+
+**Rollback** — `SCHEDULER=sm2`: the classic SM-2 below runs from `card.sm2` (quality from the
+grade: Again→1, Hard→3, Good→4, Easy→5) and drives `nextReviewAt`; FSRS fields are left as
+they were. Unset or `fsrs` → FSRS.
+
+### SM-2 (rollback, `src/lib/sm2.js`)
+
+```javascript
+function updateMastery(mastery, qualityScore, now) {
+  // qualityScore 0–5: <3 failed
+  if (qualityScore < 3) { repetitions = 0; interval = 1; }
+  else {
     if (repetitions === 0) interval = 1;
     else if (repetitions === 1) interval = 6;
     else interval = Math.round(interval * easeFactor);
     repetitions += 1;
   }
-
-  // EF always updated regardless of pass/fail — failures decrease EF so hard concepts
-  // get shorter review intervals and show lower mastery on visualizations
-  easeFactor = Math.max(
-    1.3,
-    easeFactor + 0.1 - (5 - qualityScore) * (0.08 + (5 - qualityScore) * 0.02)
-  );
-
-  const nextReviewAt = new Date();
-  nextReviewAt.setDate(nextReviewAt.getDate() + interval);
-
-  return {
-    ...mastery,
-    easeFactor,
-    interval,
-    repetitions,
-    score: Math.min(1.0, repetitions * 0.15),
-    nextReviewAt: nextReviewAt.toISOString(),
-    lastReviewedAt: new Date().toISOString()
-  };
+  easeFactor = Math.max(1.3, easeFactor + 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
+  // nextReviewAt = now + interval days; score = min(1, repetitions × 0.15)
 }
-
-// Quality score mapping:
-// MCQ wrong → 1
-// MCQ correct, confidence 1 (Low) → 3
-// MCQ correct, confidence 2 (Medium) → 4
-// MCQ correct, confidence 3 (High) → 5
-// Free-response: Math.floor(aiScore * 5), minus 1 if confidence === 1
 ```
 
 ---

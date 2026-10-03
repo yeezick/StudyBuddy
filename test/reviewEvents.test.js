@@ -21,7 +21,6 @@ globalThis.fetch = async (url, init) => {
 const { store } = await import('../src/store/index.js');
 const { startQuiz, cancelQuiz, pendingQuizReply, onQuizConfidence, onQuizAnswer, onFreeTextConfidence } =
   await import('../src/slack/quizFlow.js');
-const { gradeFromQuality } = await import('../src/lib/reviewEvents.js');
 
 const USER = 'test-user'; // SINGLE_USER_ID in helpers/env.js; its library topic is ai-pm
 const SLACK_USER = 'UOWNER';
@@ -70,10 +69,6 @@ afterEach(() => {
   fake.restore();
 });
 
-test('T3: grade maps SM-2 quality onto 1–4', () => {
-  assert.deepEqual([0, 1, 2, 3, 4, 5].map(gradeFromQuality), [1, 1, 1, 2, 3, 4]);
-});
-
 test('T3-1/2: a full MCQ quiz writes one event per answer with confidence, grade and latency', async () => {
   const { chat } = fakeClient();
   anthropicReplies.push([mcq('c1', 'B'), mcq('c2', 'C')]);
@@ -105,6 +100,22 @@ test('T3-1/2: a full MCQ quiz writes one event per answer with confidence, grade
   assert.ok(second.latencyMs >= 2000 && second.latencyMs < 4000, `latency ${second.latencyMs}`);
   assert.ok(Date.parse(first.ts) <= Date.parse(second.ts));
 
+  // T4-5: each event carries the FSRS card before and after, and the saved card is the after.
+  for (const e of [first, second]) {
+    assert.equal(e.prevState.state, 0, 'new card');
+    assert.equal(e.prevState.stability, 0);
+    assert.equal(e.nextState.scheduler, 'fsrs');
+    assert.equal(e.nextState.reps, 1);
+    assert.ok(e.nextState.stability > 0);
+    assert.equal(e.nextState.retrievability_at_review, null, 'no retrievability before the first review');
+  }
+  assert.equal(second.nextState.lapses, 0);
+  assert.ok(first.nextState.stability > second.nextState.stability, 'Easy grows stability more than Again');
+  const [card1] = await store.getCards(USER, ['c1']);
+  const { conceptId: _c, ...savedState } = card1;
+  assert.deepEqual({ ...savedState, retrievability_at_review: null }, first.nextState);
+  assert.equal(card1.nextReviewAt, card1.due);
+
   // The quiz still completed normally.
   assert.equal((await store.getHistory(USER, 1))[0].quizId, quiz.quizId);
   assert.equal(await store.getActiveQuizId(USER), null);
@@ -134,13 +145,19 @@ test('T3-1/2: a free-text quiz writes its event on the confidence tap, latency u
     [first, second].map(({ conceptId, trigger, itemType, correct, score, confidence, grade }) =>
       ({ conceptId, trigger, itemType, correct, score, confidence, grade })),
     [
-      // 0.9 × 5 → quality 4 → Good
-      { conceptId: 'c1', trigger: 'scheduled_ping', itemType: 'free_text', correct: true, score: 0.9, confidence: 3, grade: 3 },
-      // 0.2 × 5 = 1, minus 1 for low confidence → quality 0 → Again
+      // right + Sure → Easy (the 0.9 score is logged, not used)
+      { conceptId: 'c1', trigger: 'scheduled_ping', itemType: 'free_text', correct: true, score: 0.9, confidence: 3, grade: 4 },
+      // wrong → Again
       { conceptId: 'c2', trigger: 'scheduled_ping', itemType: 'free_text', correct: false, score: 0.2, confidence: 1, grade: 1 },
     ],
   );
   assert.ok(first.latencyMs >= 3000 && first.latencyMs < 5000, `latency ${first.latencyMs}`);
+  for (const e of [first, second]) {
+    assert.equal(e.prevState.state, 0);
+    assert.equal(e.nextState.scheduler, 'fsrs');
+    assert.equal(e.nextState.reps, 1);
+    assert.ok('retrievability_at_review' in e.nextState);
+  }
   assert.equal((await store.getHistory(USER, 1))[0].quizId, quiz.quizId);
   assert.deepEqual(errors, []);
 });
@@ -161,8 +178,10 @@ test('T3-1: cancelling records graded answers once; a free-text answer without a
     ['c2', 'free_text', null],
     ['c1', 'mcq', 2],
   ]);
-  // Missing confidence counts as Medium, exactly as SM-2 already treats it: floor(0.8 × 5) = 4 → Good.
+  // Right with no confidence tap → Good.
   assert.equal(events[0].grade, 3);
+  assert.equal(events[0].nextState.reps, 1);
+  assert.equal((await store.getCards(USER, ['c2']))[0].reps, 1, 'cancel schedules the untapped answer once');
 });
 
 test('T3-5: a failing event write is logged once and the quiz carries on', async () => {
@@ -179,10 +198,59 @@ test('T3-5: a failing event write is logged once and the quiz carries on', async
     assert.equal((await store.getHistory(USER, 1))[0].quizId, quiz.quizId, 'quiz completed');
     assert.equal((await store.getQuiz(quiz.quizId)).score, 100);
     const cards = await store.getCards(USER, ['c1', 'c2']);
-    assert.ok(cards.every((c) => c?.repetitions === 1), 'SM-2 still applied');
+    assert.ok(cards.every((c) => c?.reps === 1 && c.sm2.repetitions === 1), 'cards still scheduled');
     assert.equal(errors.length, 2, 'one line per failed write, no retries');
     assert.ok(errors.every((e) => e.startsWith('[review-events] append failed') && e.includes('db down')));
   } finally {
     store.appendReviewEvent = append;
   }
+});
+
+test('T4-4: a flat SM-2 card is converted on its next answer; the event shows the converted state', async () => {
+  const { chat } = fakeClient();
+  const legacy = {
+    conceptId: 'c1', score: 0.3, easeFactor: 2.5, interval: 6, repetitions: 2,
+    nextReviewAt: new Date(Date.now() + 4 * 86400000).toISOString(),
+    lastReviewedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+  };
+  await store.saveCard(USER, legacy);
+  anthropicReplies.push([mcq('c1', 'B')]);
+  const quiz = await startQuiz({ chat }, USER, SLACK_USER, CHANNEL, {}, { concepts: CONCEPTS, count: 1 });
+  await onQuizConfidence({ ...action({ quizId: quiz.quizId, questionId: 'q1', level: 2 }), client: { chat } });
+  await onQuizAnswer({ ...action({ quizId: quiz.quizId, questionId: 'q1', letter: 'B', confidenceLevel: 2 }), client: { chat } });
+
+  const [event] = await store.getReviewEvents(USER);
+  assert.equal(event.prevState.state, 2, 'converted to a review card');
+  assert.ok(Math.abs(event.prevState.stability - 6) < 1e-9);
+  assert.equal(event.prevState.due, legacy.nextReviewAt, 'due date kept by the conversion');
+  assert.equal(event.prevState.sm2.easeFactor, 2.5);
+  assert.ok(event.nextState.retrievability_at_review > 0.9 && event.nextState.retrievability_at_review < 1);
+  const [card] = await store.getCards(USER, ['c1']);
+  assert.equal(card.reps, 3);
+  assert.equal(card.sm2.repetitions, 3);
+  assert.ok(card.convertedFromSm2At);
+  assert.deepEqual(errors, []);
+});
+
+test('T4: a quiz in flight from before the deploy is scheduled once and logged once', async () => {
+  const { chat } = fakeClient();
+  anthropicReplies.push([mcq('c1', 'B'), mcq('c2', 'C')]);
+  const quiz = await startQuiz({ chat }, USER, SLACK_USER, CHANNEL, {}, { concepts: CONCEPTS, count: 2 });
+  // Before T4, an MCQ answer logged its event at once and was scheduled at completion.
+  const stored = await store.getQuiz(quiz.quizId);
+  Object.assign(stored.questions[0], {
+    userAnswer: 'B', answeredAt: new Date().toISOString(), isCorrect: true, pointsEarned: 1,
+    confidenceRating: 2, reviewRecorded: true,
+  });
+  delete stored.questions[0].scheduled;
+  stored.currentQuestionIndex = 1;
+  await store.saveQuiz(stored);
+
+  await onQuizConfidence({ ...action({ quizId: quiz.quizId, questionId: 'q2', level: 2 }), client: { chat } });
+  await onQuizAnswer({ ...action({ quizId: quiz.quizId, questionId: 'q2', letter: 'C', confidenceLevel: 2 }), client: { chat } });
+
+  assert.deepEqual((await store.getReviewEvents(USER)).map((e) => e.conceptId), ['c2'], 'no second event for q1');
+  const cards = await store.getCards(USER, ['c1', 'c2']);
+  assert.deepEqual(cards.map((c) => c.reps), [1, 1], 'q1 scheduled at completion, q2 at answer');
+  assert.deepEqual(errors, []);
 });

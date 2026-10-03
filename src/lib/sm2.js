@@ -1,3 +1,6 @@
+// SM-2, kept as the rollback scheduler (SCHEDULER=sm2) and shadow-updated under `card.sm2`
+// on every review so a rollback resumes from current state (T4-7).
+
 export function defaultMastery(conceptId) {
   return {
     conceptId,
@@ -10,7 +13,15 @@ export function defaultMastery(conceptId) {
   };
 }
 
-export function updateMastery(mastery, qualityScore) {
+// The 1–4 grade (gradeFor) → the SM-2 quality it stands for. Again resets the card.
+export const QUALITY_FOR_GRADE = { 1: 1, 2: 3, 3: 4, 4: 5 };
+
+// The mastery score shown by /mastery and the weekly digest (unchanged by FSRS, T4-6).
+export function scoreFor(repetitions) {
+  return Math.min(1.0, repetitions * 0.15);
+}
+
+export function updateMastery(mastery, qualityScore, now = new Date()) {
   let { easeFactor, interval, repetitions } = mastery;
 
   if (qualityScore < 3) {
@@ -28,7 +39,7 @@ export function updateMastery(mastery, qualityScore) {
     easeFactor + 0.1 - (5 - qualityScore) * (0.08 + (5 - qualityScore) * 0.02)
   );
 
-  const nextReviewAt = new Date();
+  const nextReviewAt = new Date(now);
   nextReviewAt.setDate(nextReviewAt.getDate() + interval);
 
   return {
@@ -36,22 +47,8 @@ export function updateMastery(mastery, qualityScore) {
     easeFactor,
     interval,
     repetitions,
-    score: Math.min(1.0, repetitions * 0.15),
+    score: scoreFor(repetitions),
     nextReviewAt: nextReviewAt.toISOString(),
-    lastReviewedAt: new Date().toISOString(),
+    lastReviewedAt: new Date(now).toISOString(),
   };
-}
-
-export function qualityScoreFromMCQ(isCorrect, confidence) {
-  if (!isCorrect) return 1;
-  if (confidence === 1) return 3;
-  if (confidence === 2) return 4;
-  if (confidence === 3) return 5;
-  return 3;
-}
-
-export function qualityScoreFromFreeText(aiScore, confidence) {
-  let q = Math.floor(aiScore * 5);
-  if (confidence === 1) q -= 1;
-  return Math.max(0, Math.min(5, q));
 }

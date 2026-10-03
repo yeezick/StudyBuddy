@@ -9,7 +9,7 @@ An AI-powered study partner that lives in your Slack. It quizzes you on your own
 ## What it does
 
 - **On-demand quizzes** via slash commands — scope by module, lesson, or free-form learning objective
-- **Spaced repetition** using the SM-2 algorithm — concepts you struggle with resurface sooner, mastery scores adjust automatically
+- **Spaced repetition** using FSRS (the scheduler in modern Anki) — concepts you struggle with resurface sooner, mastery scores adjust automatically
 - **Mastery tracking** per concept, persisted in Redis — snapshot on demand or receive a weekly digest every Sunday
 - **Scheduled quiz pings** — the bot DMs you quizzes during your configured study window without you having to initiate
 - **Study session management** — timed segments with synthesis warnings, active recall prompts, dynamic break detection, and a wrap-up quiz offer
@@ -30,7 +30,7 @@ StudyBuddy Server (Node.js, Railway, always on)
     ↓  reads/writes
 Upstash Redis
     ├── concepts:{userId}       — your concept library
-    ├── mastery:{userId}:{id}   — per-concept SM-2 state
+    ├── mastery:{userId}:{id}   — per-concept scheduler card (FSRS)
     ├── quiz:{quizId}           — active quiz state
     └── session:{userId}        — active study session state
 ```
@@ -84,6 +84,7 @@ Open `.env` and fill in each value. Where to find them:
 | `ANTHROPIC_MODEL` | Optional. Overrides the default model (`claude-sonnet-4-6`) |
 | `STORE_BACKEND` | Optional. `redis` (default) keeps all app data in Upstash. `postgres` keeps records (users, concepts, cards, review log, sessions, history) in Postgres. Quizzes and job queues stay in Redis either way |
 | `DATABASE_URL` | Only with `STORE_BACKEND=postgres`: a Postgres connection string (e.g. Neon). Migrations run on boot, or by hand with `npm run db:migrate` |
+| `SCHEDULER` | Optional. `fsrs` (default) or `sm2`. `sm2` is the rollback: cards are scheduled with classic SM-2 from the SM-2 state every card keeps under `sm2` |
 
 The bot only answers `SLACK_USER_ID`: commands, button taps and messages from anyone else are silently dropped.
 
