@@ -127,6 +127,8 @@ npm test          # unit + boot tests
 npm run check     # node --check on every JS file
 ```
 
+The Postgres store tests are skipped unless `TEST_POSTGRES=1`. They take a **local** throwaway database from the standard `PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER`/`PGPASSWORD` variables and refuse any other host. Each run uses its own schema and drops it afterwards. CI runs them against a Postgres service container.
+
 `scripts/test-*.js` are live smoke tests that hit real services with your `.env`.
 
 The server will seed your concept library on first boot if Redis is empty — from `SEED_PATH` if set, otherwise the bundled example (see [Using your own material](#using-your-own-material)).

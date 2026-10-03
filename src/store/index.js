@@ -2,6 +2,7 @@ import pg from 'pg';
 import { redis } from '../redis.js';
 import { createRedisStore } from './redisStore.js';
 import { createPostgresStore } from './postgresStore.js';
+import { ownerConfig } from '../lib/config.js';
 
 // The store interface — every handler reads and writes app data through it.
 // Both backends implement all of it; test/helpers/storeContract.js is the spec.
@@ -21,18 +22,19 @@ import { createPostgresStore } from './postgresStore.js';
 //   getMasterySnapshot(userId, day), saveMasterySnapshot(userId, day, record)
 //   appendReviewEvent(event), getReviewEvents(userId, { limit }) → newest first
 //
-// STORE_BACKEND: `redis` (default, today's keys) or `postgres` (needs DATABASE_URL).
+// STORE_BACKEND: `redis` (default, today's keys) or `postgres` (needs DATABASE_URL or PG* vars).
 // Quizzes stay in Redis under both backends (short-lived state, DEC-047).
 export function createStoreFromEnv(env = process.env, { redisClient = redis } = {}) {
   const backend = env.STORE_BACKEND || 'redis';
   const redisStore = createRedisStore({ redis: redisClient });
   if (backend === 'redis') return redisStore;
   if (backend === 'postgres') {
-    if (!env.DATABASE_URL) throw new Error('STORE_BACKEND=postgres needs DATABASE_URL.');
-    const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 5 });
+    // DATABASE_URL, or the standard libpq PG* variables (PGHOST, PGDATABASE, …) that node-postgres reads itself.
+    if (!env.DATABASE_URL && !env.PGHOST) throw new Error('STORE_BACKEND=postgres needs DATABASE_URL (or PGHOST/PGDATABASE).');
+    const pool = new pg.Pool({ connectionString: env.DATABASE_URL || undefined, max: 5 });
     // Hosted Postgres drops idle connections; without a listener that crashes the process.
     pool.on('error', (err) => console.error(`[store:postgres] idle client error | ${err.message}`));
-    return createPostgresStore({ pool, ephemeral: redisStore });
+    return createPostgresStore({ pool, ephemeral: redisStore, primaryUserId: ownerConfig(env).userId });
   }
   throw new Error(`Unknown STORE_BACKEND "${backend}". Use "redis" or "postgres".`);
 }

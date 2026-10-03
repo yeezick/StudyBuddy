@@ -2,9 +2,12 @@ import { applyConceptUpdate } from '../mcp/conceptOps.js';
 import { migrate } from './migrate.js';
 
 // Until topics reach the app (design §10 slice 3), each user has one library, stored as a
-// topic of its own. The app keeps seeing local concept ids ("m1-c01"); rows use the global
-// {topicId}:{localId} form.
-export const libraryTopicId = (userId) => `${userId}-library`;
+// topic of its own. The primary (owner) user's library is `ai-pm`, the topic its data moves
+// to in slice 3, so that needs no rename; any other user gets `{userId}-library`. The app
+// keeps seeing local concept ids ("m1-c01"); rows use the global {topicId}:{localId} form.
+export const DEFAULT_TOPIC_ID = 'ai-pm';
+export const libraryTopicId = (userId, primaryUserId) =>
+  (primaryUserId && userId === primaryUserId ? DEFAULT_TOPIC_ID : `${userId}-library`);
 const globalId = (topicId, localId) => `${topicId}:${localId}`;
 const localIdOf = (topicId, id) => (id.startsWith(`${topicId}:`) ? id.slice(topicId.length + 1) : id);
 
@@ -17,7 +20,8 @@ function withoutNulls(obj) {
 
 // Records in Postgres; quizzes and the active-quiz pointer are short-lived and stay in
 // `ephemeral` (a Redis store), per DEC-047.
-export function createPostgresStore({ pool, ephemeral, migrateOnInit = true }) {
+export function createPostgresStore({ pool, ephemeral, migrateOnInit = true, primaryUserId = null }) {
+  const topicIdFor = (userId) => libraryTopicId(userId, primaryUserId);
   const knownUsers = new Set();
 
   async function tx(fn) {
@@ -46,14 +50,14 @@ export function createPostgresStore({ pool, ephemeral, migrateOnInit = true }) {
     await ensureUser(db, userId);
     const { rowCount } = await db.query(
       `INSERT INTO topics (id, owner_user_id, name) VALUES ($1, $2, 'Library') ON CONFLICT DO NOTHING`,
-      [libraryTopicId(userId), userId],
+      [topicIdFor(userId), userId],
     );
     return rowCount === 1;
   }
 
   // Serialises writers to one library so positions stay unique and ordered.
   async function lockLibrary(db, userId) {
-    await db.query('SELECT 1 FROM topics WHERE id = $1 FOR UPDATE', [libraryTopicId(userId)]);
+    await db.query('SELECT 1 FROM topics WHERE id = $1 FOR UPDATE', [topicIdFor(userId)]);
   }
 
   async function insertConcept(db, topicId, concept, position, addedBy) {
@@ -80,7 +84,7 @@ export function createPostgresStore({ pool, ephemeral, migrateOnInit = true }) {
   }
 
   async function getConcepts(userId) {
-    const { rows } = await pool.query('SELECT data FROM concepts WHERE topic_id = $1 ORDER BY position', [libraryTopicId(userId)]);
+    const { rows } = await pool.query('SELECT data FROM concepts WHERE topic_id = $1 ORDER BY position', [topicIdFor(userId)]);
     return rows.map((r) => r.data);
   }
 
@@ -99,7 +103,7 @@ export function createPostgresStore({ pool, ephemeral, migrateOnInit = true }) {
     async seedConcepts(userId, concepts) {
       return tx(async (db) => {
         if (!(await ensureLibrary(db, userId))) return false;
-        const topicId = libraryTopicId(userId);
+        const topicId = topicIdFor(userId);
         for (const [i, concept] of concepts.entries()) {
           await insertConcept(db, topicId, concept, i, 'seed');
         }
@@ -111,7 +115,7 @@ export function createPostgresStore({ pool, ephemeral, migrateOnInit = true }) {
       return tx(async (db) => {
         await ensureLibrary(db, userId);
         await lockLibrary(db, userId);
-        const topicId = libraryTopicId(userId);
+        const topicId = topicIdFor(userId);
         let position = await nextPosition(db, topicId);
         const added = [];
         for (const concept of concepts) {
@@ -125,7 +129,7 @@ export function createPostgresStore({ pool, ephemeral, migrateOnInit = true }) {
 
     async updateConcept(userId, conceptId, updates) {
       return tx(async (db) => {
-        const id = globalId(libraryTopicId(userId), conceptId);
+        const id = globalId(topicIdFor(userId), conceptId);
         const { rows } = await db.query('SELECT data FROM concepts WHERE id = $1 FOR UPDATE', [id]);
         if (rows.length === 0) return null;
         const next = applyConceptUpdate(rows[0].data, updates);
@@ -140,7 +144,7 @@ export function createPostgresStore({ pool, ephemeral, migrateOnInit = true }) {
 
     async deleteConcept(userId, conceptId) {
       return tx(async (db) => {
-        const topicId = libraryTopicId(userId);
+        const topicId = topicIdFor(userId);
         const { rowCount } = await db.query('DELETE FROM concepts WHERE id = $1', [globalId(topicId, conceptId)]);
         if (rowCount === 0) return null;
         const { rows } = await db.query('SELECT COUNT(*)::int AS n FROM concepts WHERE topic_id = $1', [topicId]);
@@ -150,7 +154,7 @@ export function createPostgresStore({ pool, ephemeral, migrateOnInit = true }) {
 
     async getCards(userId, conceptIds) {
       if (conceptIds.length === 0) return [];
-      const topicId = libraryTopicId(userId);
+      const topicId = topicIdFor(userId);
       const { rows } = await pool.query(
         'SELECT concept_id, state FROM cards WHERE user_id = $1 AND concept_id = ANY($2)',
         [userId, conceptIds.map((id) => globalId(topicId, id))],
@@ -164,7 +168,7 @@ export function createPostgresStore({ pool, ephemeral, migrateOnInit = true }) {
       await pool.query(
         `INSERT INTO cards (user_id, concept_id, state, due) VALUES ($1, $2, $3, $4)
          ON CONFLICT (user_id, concept_id) DO UPDATE SET state = EXCLUDED.state, due = EXCLUDED.due, updated_at = now()`,
-        [userId, globalId(libraryTopicId(userId), card.conceptId), json(card), card.nextReviewAt ?? null],
+        [userId, globalId(topicIdFor(userId), card.conceptId), json(card), card.nextReviewAt ?? null],
       );
     },
 
@@ -239,7 +243,7 @@ export function createPostgresStore({ pool, ephemeral, migrateOnInit = true }) {
 
     async appendReviewEvent(event) {
       await ensureUser(pool, event.userId);
-      const topicId = event.topicId ?? libraryTopicId(event.userId);
+      const topicId = event.topicId ?? topicIdFor(event.userId);
       const { rows } = await pool.query(
         `INSERT INTO review_events (user_id, concept_id, topic_id, ts, trigger, quiz_id, item_type, correct, score,
            confidence, latency_ms, grade, prev_state, next_state)
