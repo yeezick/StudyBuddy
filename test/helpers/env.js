@@ -15,6 +15,7 @@ export const TEST_ENV = {
   USER_TIMEZONE: 'America/Chicago',
   MCP_AUTH_TOKEN: 'test-mcp-token',
   SEED_PATH: '',
+  SKIP_DOTENV: '1', // spawned children must never load the developer's real .env
 };
 
 Object.assign(process.env, TEST_ENV);

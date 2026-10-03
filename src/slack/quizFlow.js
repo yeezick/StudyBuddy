@@ -227,7 +227,7 @@ async function completeQuiz(client, quiz) {
 
   await saveQuiz(quiz);
 
-  const userId = process.env.SINGLE_USER_ID;
+  const { userId } = quiz;
 
   for (const q of answered) {
     if (q.sm2Applied) continue;
@@ -480,7 +480,7 @@ export function registerQuizHandlers() {
       await saveQuiz(quiz);
 
       const qualityScore = qualityScoreFromFreeText(q.pointsEarned ?? 0, level);
-      await applyQuestionResult(process.env.SINGLE_USER_ID, q.conceptId, qualityScore);
+      await applyQuestionResult(quiz.userId, q.conceptId, qualityScore);
 
       await client.chat.update({
         channel: body.channel.id,

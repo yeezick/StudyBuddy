@@ -1,8 +1,9 @@
 import '../src/lib/env.js';
 import { boltApp } from '../src/slack/app.js';
 import { getDMChannel } from '../src/slack/dm.js';
+import { ownerConfig } from '../src/lib/config.js';
 
-const userId = process.env.SLACK_USER_ID;
+const userId = ownerConfig().slackUserId;
 if (!userId) {
   console.error('Missing SLACK_USER_ID in .env');
   process.exit(1);

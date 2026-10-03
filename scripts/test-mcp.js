@@ -1,6 +1,8 @@
 import '../src/lib/env.js';
 import { redis } from '../src/redis.js';
 import { createMcpServer } from '../src/mcp/server.js';
+import { isKnownUser } from '../src/lib/resolveUser.js';
+import { ownerConfig } from '../src/lib/config.js';
 
 const mcp = createMcpServer();
 
@@ -236,8 +238,7 @@ function runUserValidation() {
   header('User validation');
 
   function validateUser(userId) {
-    const singleUser = process.env.SINGLE_USER_ID;
-    if (userId !== singleUser) throw new Error(`Unauthorized userId: ${userId}`);
+    if (!isKnownUser(userId)) throw new Error(`Unauthorized userId: ${userId}`);
   }
 
   let threw = false;
@@ -250,7 +251,7 @@ function runUserValidation() {
 
   let noThrow = true;
   try {
-    validateUser(process.env.SINGLE_USER_ID);
+    validateUser(ownerConfig().userId);
   } catch {
     noThrow = false;
   }

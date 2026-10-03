@@ -12,6 +12,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { diffConcepts } from '../src/mcp/conceptOps.js';
+import { ownerConfig } from '../src/lib/config.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -86,7 +87,8 @@ async function main() {
   const seedPath = path.resolve(REPO_ROOT, requireEnv('SEED_PATH'));
   const url = requireEnv('MCP_URL');
   const token = requireEnv('MCP_AUTH_TOKEN');
-  const userId = requireEnv('SINGLE_USER_ID');
+  const { userId } = ownerConfig();
+  if (!userId) throw new Error('Missing SINGLE_USER_ID.');
   const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
 
   console.log(`seed: ${path.relative(REPO_ROOT, seedPath)} (${seed.length} concepts) → ${sseUrl(url).origin}`);

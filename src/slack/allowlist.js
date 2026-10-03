@@ -1,23 +1,20 @@
-// Single-user bot: every Slack request from anyone but SLACK_USER_ID is dropped.
-// Registered once as Bolt global middleware, so it covers every command, action and message.
+import { resolveUser, slackUserIdOf } from '../lib/resolveUser.js';
 
-export function slackUserIdOf(body) {
-  return body?.user_id ?? body?.user?.id ?? body?.event?.user ?? null;
-}
+export { slackUserIdOf };
 
-export function isAllowedSlackUser(userId, allowed = process.env.SLACK_USER_ID) {
-  return Boolean(allowed) && userId === allowed;
-}
-
-export async function allowOnlyOwner({ body, ack, next }) {
-  const userId = slackUserIdOf(body);
-  if (isAllowedSlackUser(userId)) {
+// Every Slack request is resolved to an app user once, here. Unknown callers are dropped;
+// known ones reach handlers with `context.userId` set. Registered as Bolt global middleware,
+// so it covers every command, action and message.
+export async function allowOnlyOwner({ body, context, ack, next }) {
+  const user = resolveUser(body);
+  if (user) {
+    if (context) context.userId = user.userId;
     await next();
     return;
   }
   // Ack commands/actions so the caller gets no timeout error; events have no ack here.
   if (typeof ack === 'function') await ack();
   if (!body?.event?.bot_id) {
-    console.warn(`[slack:allowlist] dropped request | user=${userId ?? 'unknown'} | type=${body?.command ?? body?.type ?? 'unknown'}`);
+    console.warn(`[slack:allowlist] dropped request | user=${slackUserIdOf(body) ?? 'unknown'} | type=${body?.command ?? body?.type ?? 'unknown'}`);
   }
 }

@@ -3,8 +3,9 @@ import { getConcepts } from '../src/lib/concepts.js';
 import { generateQuestions } from '../src/ai/questionGen.js';
 import { gradeMCQ, gradeFreeText } from '../src/ai/grading.js';
 import { matchConceptsToPrompt } from '../src/ai/conceptMatch.js';
+import { ownerConfig } from '../src/lib/config.js';
 
-const userId = process.env.SINGLE_USER_ID || 'erick';
+const userId = ownerConfig().userId ?? 'erick';
 
 function header(label) {
   console.log(`\n${'='.repeat(60)}\n${label}\n${'='.repeat(60)}`);

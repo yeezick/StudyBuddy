@@ -3,6 +3,8 @@ import express from 'express';
 import { redis } from './redis.js';
 import { seedIfEmpty } from './lib/concepts.js';
 import { assertMcpAuthConfigured, requireBearer } from './lib/auth.js';
+import { assertOwnerConfigured } from './lib/config.js';
+import { bootUserIds } from './lib/resolveUser.js';
 import { depSnapshot, track, withTimeout } from './lib/health.js';
 import { boltApp } from './slack/app.js';
 import { registerCommands } from './slack/commands.js';
@@ -23,12 +25,10 @@ const HEALTH_REDIS_TIMEOUT_MS = 500;
 
 const app = express();
 const port = process.env.PORT || 3000;
-const userId = process.env.SINGLE_USER_ID;
 
-if (!userId) {
-  throw new Error('Missing SINGLE_USER_ID. Set it in .env');
-}
+assertOwnerConfigured();
 assertMcpAuthConfigured();
+const userIds = bootUserIds();
 
 // Always 200 while the process is up; each dependency reports its own state.
 app.get('/health', async (req, res) => {
@@ -55,12 +55,12 @@ registerMessageRouter();
 // Slack and BullMQ connect after the port is bound, so /health answers even if they are slow or down.
 async function startServices() {
   await Promise.all([
-    track('seed', () => seedIfEmpty(userId)),
+    track('seed', () => Promise.all(userIds.map((id) => seedIfEmpty(id)))),
     track('slack', async () => {
       await boltApp.init();
       await boltApp.start();
     }),
-    track('scheduler', () => startScheduler(boltApp.client, userId, {
+    track('scheduler', () => startScheduler(boltApp.client, userIds, {
       synth:       (job) => handleSessionSynth(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
       recall:      (job) => handleSessionRecall(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
       sessionEnd:  (job) => handleSessionEnd(boltApp.client, job.data.userId, job.data.sessionId),
