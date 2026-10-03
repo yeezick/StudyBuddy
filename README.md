@@ -131,6 +131,16 @@ The Postgres store tests are skipped unless `TEST_POSTGRES=1`. They take a **loc
 
 `scripts/test-*.js` are live smoke tests that hit real services with your `.env`.
 
+**Moving from Redis to Postgres.** `scripts/migrate-redis-to-postgres.js` copies the owner's records (concepts, cards, quiz history, the latest session, settings, daily mastery snapshots) from Redis into Postgres. It only reads Redis, so Redis stays as the rollback.
+
+```bash
+node scripts/migrate-redis-to-postgres.js --dry-run   # rows per table + records it can't map; writes nothing
+node scripts/migrate-redis-to-postgres.js             # applies migrations, then copies (safe to re-run)
+node scripts/migrate-redis-to-postgres.js --verify    # compares both through the store; exits 1 on any mismatch
+```
+
+Then set `STORE_BACKEND=postgres`. To roll back, unset `STORE_BACKEND` (the app goes back to Redis). Writes made while on Postgres are not copied back. A real run refuses while `STORE_BACKEND=postgres`, because copying Redis over live Postgres data would overwrite newer data. Don't use the bot between the copy and the switch, and run `--verify` again after the switch.
+
 The server will seed your concept library on first boot if Redis is empty — from `SEED_PATH` if set, otherwise the bundled example (see [Using your own material](#using-your-own-material)).
 
 ---
