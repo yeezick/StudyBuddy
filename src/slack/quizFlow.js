@@ -20,6 +20,11 @@ const pendingFreeTextConfidence = new Map();
 // Callbacks invoked when a quiz completes: quizId → async fn(quiz)
 const quizCompletionCallbacks = new Map();
 
+// The handler waiting for this user's free-text answer in this channel, if any (consumed by messageRouter).
+export function pendingQuizReply(slackUserId, channelId) {
+  return pendingReplies.get(`${slackUserId}:${channelId}`) ?? null;
+}
+
 export function registerQuizCompletion(quizId, cb) {
   quizCompletionCallbacks.set(quizId, cb);
 }
@@ -380,13 +385,6 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
 }
 
 export function registerQuizHandlers() {
-  boltApp.message(async ({ message }) => {
-    if (message.subtype) return;
-    const pendingKey = `${message.user}:${message.channel}`;
-    const handler = pendingReplies.get(pendingKey);
-    if (handler) await handler(message.text ?? '');
-  });
-
   boltApp.action(/^quiz_confidence_\d$/, async ({ ack, body, client }) => {
     await ack();
     try {

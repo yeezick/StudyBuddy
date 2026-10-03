@@ -2,6 +2,8 @@ import './lib/env.js';
 import express from 'express';
 import { redis } from './redis.js';
 import { seedIfEmpty } from './lib/concepts.js';
+import { assertMcpAuthConfigured, requireBearer } from './lib/auth.js';
+import { depSnapshot, track, withTimeout } from './lib/health.js';
 import { boltApp } from './slack/app.js';
 import { registerCommands } from './slack/commands.js';
 import { registerQuizHandlers } from './slack/quizFlow.js';
@@ -13,8 +15,11 @@ import {
   handleSessionWrapMorning,
   registerSessionHandlers,
 } from './slack/sessionFlow.js';
-import { startScheduler, firePingNow } from './scheduler/jobs.js';
+import { registerMessageRouter } from './slack/messageRouter.js';
+import { startScheduler } from './scheduler/jobs.js';
 import { mountMcp } from './mcp/server.js';
+
+const HEALTH_REDIS_TIMEOUT_MS = 500;
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -23,56 +28,50 @@ const userId = process.env.SINGLE_USER_ID;
 if (!userId) {
   throw new Error('Missing SINGLE_USER_ID. Set it in .env');
 }
+assertMcpAuthConfigured();
 
-app.get('/test/ping', async (req, res) => {
-  try {
-    const result = await firePingNow(userId);
-    res.json({ ...result, timestamp: new Date().toISOString() });
-  } catch (err) {
-    console.error(`[test/ping] failed | userId=${userId} | ${err.message}`);
-    res.status(500).json({ ok: false, error: err.message, timestamp: new Date().toISOString() });
-  }
-});
-
+// Always 200 while the process is up; each dependency reports its own state.
 app.get('/health', async (req, res) => {
+  let redisState;
   try {
-    const pong = await redis.ping();
-    res.status(200).json({
-      status: 'ok',
-      redis: pong === 'PONG' ? 'connected' : 'unexpected',
-      timestamp: new Date().toISOString(),
-    });
+    const pong = await withTimeout(redis.ping(), HEALTH_REDIS_TIMEOUT_MS, 'redis ping');
+    redisState = { state: pong === 'PONG' ? 'ok' : 'unexpected' };
   } catch (err) {
-    res.status(503).json({
-      status: 'error',
-      redis: 'disconnected',
-      error: err.message,
-      timestamp: new Date().toISOString(),
-    });
+    redisState = { state: 'error', detail: err.message };
   }
+  res.status(200).json({
+    status: 'ok',
+    deps: { redis: redisState, ...depSnapshot() },
+    timestamp: new Date().toISOString(),
+  });
 });
 
-async function start() {
-  await seedIfEmpty(userId);
-  mountMcp(app);
-  registerCommands();
-  registerQuizHandlers();
-  registerSessionHandlers();
-  await boltApp.start();
-  await startScheduler(boltApp.client, userId, {
-    synth:       (job) => handleSessionSynth(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
-    recall:      (job) => handleSessionRecall(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
-    sessionEnd:  (job) => handleSessionEnd(boltApp.client, job.data.userId, job.data.sessionId),
-    breakEnd:    (job) => handleBreakEnd(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
-    wrapMorning: (job) => handleSessionWrapMorning(boltApp.client, job.data.userId, job.data.sessionId),
-  });
-  console.log('⚡️ Bolt connected (Socket Mode)');
-  app.listen(port, () => {
-    console.log(`StudyAgent listening on port ${port}`);
-  });
+mountMcp(app, requireBearer());
+registerCommands();
+registerQuizHandlers();
+registerSessionHandlers();
+registerMessageRouter();
+
+// Slack and BullMQ connect after the port is bound, so /health answers even if they are slow or down.
+async function startServices() {
+  await Promise.all([
+    track('seed', () => seedIfEmpty(userId)),
+    track('slack', async () => {
+      await boltApp.init();
+      await boltApp.start();
+    }),
+    track('scheduler', () => startScheduler(boltApp.client, userId, {
+      synth:       (job) => handleSessionSynth(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
+      recall:      (job) => handleSessionRecall(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
+      sessionEnd:  (job) => handleSessionEnd(boltApp.client, job.data.userId, job.data.sessionId),
+      breakEnd:    (job) => handleBreakEnd(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
+      wrapMorning: (job) => handleSessionWrapMorning(boltApp.client, job.data.userId, job.data.sessionId),
+    })),
+  ]);
+  console.log(`[boot] background start finished | ${JSON.stringify(depSnapshot())}`);
 }
 
-start().catch((err) => {
-  console.error('Failed to start:', err);
-  process.exit(1);
+app.listen(port, () => {
+  console.log(`StudyAgent listening on port ${port}`);
+  startServices();
 });

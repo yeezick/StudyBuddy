@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-export const MODEL = 'claude-sonnet-4-6';
+export const DEFAULT_MODEL = 'claude-sonnet-4-6';
+export const MODEL = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
 
 if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error('Missing ANTHROPIC_API_KEY. Set it in .env');

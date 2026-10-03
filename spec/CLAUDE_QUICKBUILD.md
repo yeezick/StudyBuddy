@@ -705,18 +705,19 @@ function updateMastery(mastery, qualityScore) {
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_SIGNING_SECRET=...
 SLACK_APP_TOKEN=xapp-...      # for Socket Mode if not using HTTP
-SLACK_USER_ID=U...             # Erick's Slack user ID — single user target
+SLACK_USER_ID=U...             # Erick's Slack user ID — single user target; all other Slack users are ignored
 
 # Anthropic
 ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=                # optional override; default claude-sonnet-4-6
 
 # Redis (Upstash)
 UPSTASH_REDIS_REST_URL=https://...
 UPSTASH_REDIS_REST_TOKEN=...
 REDIS_URL=rediss://...          # ioredis connection string for BullMQ
 
-# MCP
-MCP_PORT=3001                   # port for SSE MCP endpoint
+# MCP (served on PORT at /mcp/sse)
+MCP_AUTH_TOKEN=...              # Bearer secret for /mcp; required in production
 
 # App
 PORT=3000
