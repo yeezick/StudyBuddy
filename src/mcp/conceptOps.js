@@ -36,3 +36,35 @@ export function applyConceptUpdate(concept, updates) {
   if (updates.scope) next.scope = { ...concept.scope, ...updates.scope };
   return next;
 }
+
+// Key-order-independent JSON for comparing concepts.
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonical(value[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+// Plans how to make `existing` match `incoming` exactly. Both are compared as the MCP tools
+// store them (conceptShape, unknown keys stripped), so seed-only fields like `mastery` never count.
+export function diffConcepts(existing, incoming) {
+  const target = incoming.map((c) => conceptShape.parse(c));
+  const ids = target.map((c) => c.id);
+  const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+  if (dupes.length) throw new Error(`Seed has duplicate concept ids: ${[...new Set(dupes)].join(', ')}`);
+
+  const current = new Map(existing.map((c) => [c.id, conceptShape.parse(c)]));
+  const add = [];
+  const change = [];
+  const unchanged = [];
+  for (const c of target) {
+    const prev = current.get(c.id);
+    if (!prev) add.push(c);
+    else if (canonical(prev) !== canonical(c)) change.push(c);
+    else unchanged.push(c);
+  }
+  const targetIds = new Set(ids);
+  const remove = [...current.values()].filter((c) => !targetIds.has(c.id));
+  return { add, change, remove, unchanged };
+}

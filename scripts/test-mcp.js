@@ -1,6 +1,8 @@
 import '../src/lib/env.js';
 import { redis } from '../src/redis.js';
-import { mcp } from '../src/mcp/server.js';
+import { createMcpServer } from '../src/mcp/server.js';
+
+const mcp = createMcpServer();
 
 const TEST_USER = 'test-mcp-temp';
 const OTHER_USER = 'unauthorized-user';

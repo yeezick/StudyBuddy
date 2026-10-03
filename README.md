@@ -110,7 +110,7 @@ railway up
 
 Set your environment variables in the Railway dashboard under your project's Variables tab.
 
-Railway health-checks `GET /health`. The server binds its port first and connects Slack and Redis/BullMQ in the background, so `/health` answers right away and reports each dependency's state (`ok`, `starting`, `reconnecting`, `error`).
+Railway health-checks `GET /health`. The server binds its port first and connects Slack and Redis/BullMQ in the background, so `/health` answers right away and reports each dependency's state (`ok`, `starting`, `reconnecting`, `error`). If the scheduler can't reach Redis after its retries (about 3.5 minutes), the process exits with code 1 so Railway's restart policy (`ON_FAILURE`, max 10 in `railway.json`) brings it back.
 
 **Local development** (Node 20+):
 
@@ -217,6 +217,17 @@ free-response questions from them without needing additional context.
 Save the result outside git (e.g. `private/content/concepts-seed.json`), set `SEED_PATH` to it, and restart the server. On first boot it will seed Redis automatically.
 
 If you want to push new concepts later without restarting the server, connect an MCP client (such as Claude's desktop app with MCP configured) to `/mcp/sse` with the header `Authorization: Bearer <MCP_AUTH_TOKEN>` — the `add_concepts` tool merges new concepts into Redis without overwriting existing mastery data.
+
+To make a running deployment's library match a seed file exactly (add new concepts, update edited ones, remove ones the file no longer has), use the loader script. It talks to the same authenticated MCP endpoint:
+
+```bash
+SEED_PATH=private/content/concepts-seed.json \
+MCP_URL=https://<your-app>/mcp/sse \
+MCP_AUTH_TOKEN=<token> SINGLE_USER_ID=<user> \
+node scripts/load-concepts.js --dry-run   # prints the plan, writes nothing; drop --dry-run to apply
+```
+
+Mastery is stored per concept id, so it survives an update. Re-running is safe.
 
 ---
 
