@@ -14,9 +14,7 @@ export function routeMessage(message, { hasQuizReply, hasSessionReply }) {
 }
 
 export function registerMessageRouter() {
-  const userId = process.env.SINGLE_USER_ID;
-
-  boltApp.message(async ({ message, client }) => {
+  boltApp.message(async ({ message, client, context }) => {
     const text = message.text ?? '';
     const quizReply = pendingQuizReply(message.user, message.channel);
     const sessionReply = pendingSessionReply(message.user, message.channel);
@@ -27,6 +25,6 @@ export function registerMessageRouter() {
 
     if (route === 'quiz') await quizReply(text);
     else if (route === 'session') await sessionReply(text);
-    else if (route === 'break') await handleBreakDetection(client, userId, message.channel, text);
+    else if (route === 'break') await handleBreakDetection(client, context.userId, message.channel, text);
   });
 }

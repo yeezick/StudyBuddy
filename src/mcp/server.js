@@ -4,12 +4,12 @@ import { z } from 'zod';
 import { redis } from '../redis.js';
 import { getConcepts } from '../lib/concepts.js';
 import { getAllMastery } from '../lib/mastery.js';
+import { isKnownUser } from '../lib/resolveUser.js';
 import { conceptShape, conceptUpdatesShape, mergeNewConcepts, applyConceptUpdate } from './conceptOps.js';
 
 function validateUser(userId) {
-  const singleUser = process.env.SINGLE_USER_ID;
-  if (userId !== singleUser) {
-    throw new Error(`Unauthorized userId: ${userId}. This server is single-user.`);
+  if (!isKnownUser(userId)) {
+    throw new Error(`Unauthorized userId: ${userId}.`);
   }
 }
 

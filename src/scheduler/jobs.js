@@ -7,6 +7,7 @@ import { getDMChannel } from '../slack/dm.js';
 import { startQuiz } from '../slack/quizFlow.js';
 import { buildMasterySnapshot, formatWeeklyDigestBlocks } from '../slack/masteryFlow.js';
 import { setDep } from '../lib/health.js';
+import { slackUserIdFor } from '../lib/resolveUser.js';
 
 const PING_DISTRIBUTION = { mcq: 1.0 };
 const PING_COUNT = 3;
@@ -176,6 +177,12 @@ async function selectPingConcepts(userId) {
 
 // ── Job handlers ──────────────────────────────────────────────────────────────
 
+function requireSlackUser(userId) {
+  const slackUserId = slackUserIdFor(userId);
+  if (!slackUserId) throw new Error(`No Slack user for ${userId}`);
+  return slackUserId;
+}
+
 async function handlePing(job) {
   const { userId } = job.data;
   const settings = await getSettings(userId);
@@ -200,7 +207,7 @@ async function handlePing(job) {
   }
 
   try {
-    const slackUserId = process.env.SLACK_USER_ID;
+    const slackUserId = requireSlackUser(userId);
     const channelId = await getDMChannel(slackClient, slackUserId);
     const concepts = await selectPingConcepts(userId);
 
@@ -224,7 +231,7 @@ async function handlePing(job) {
 async function handleWeeklyDigest(job) {
   const { userId } = job.data;
   try {
-    const slackUserId = process.env.SLACK_USER_ID;
+    const slackUserId = requireSlackUser(userId);
     const channelId = await getDMChannel(slackClient, slackUserId);
     const snapshot = await buildMasterySnapshot(userId);
 
@@ -325,7 +332,7 @@ export async function removeJob(jobId) {
 
 // ── Startup ───────────────────────────────────────────────────────────────────
 
-export async function startScheduler(client, userId, sessionHandlers = {}) {
+export async function startScheduler(client, userIds, sessionHandlers = {}) {
   slackClient = client;
 
   const connection = createConnection();
@@ -358,6 +365,15 @@ export async function startScheduler(client, userId, sessionHandlers = {}) {
     console.error(`[scheduler:worker] job failed | name=${job?.name} | id=${job?.id} | userId=${job?.data?.userId ?? 'unknown'} | ${err.message}`);
   });
 
+  for (const userId of userIds) {
+    await registerUserJobs(userId);
+  }
+
+  connection.markStarted();
+  console.log(`[scheduler] Started for ${userIds.join(', ')}`);
+}
+
+async function registerUserJobs(userId) {
   const settings = await getSettings(userId);
 
   // Weekly digest cron
@@ -380,7 +396,4 @@ export async function startScheduler(client, userId, sessionHandlers = {}) {
 
   // Initial ping (idempotent — jobId prevents duplicates)
   await schedulePing(userId);
-
-  connection.markStarted();
-  console.log(`[scheduler] Started for ${userId}`);
 }

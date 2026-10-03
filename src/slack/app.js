@@ -2,7 +2,7 @@ import pkg from '@slack/bolt';
 import { allowOnlyOwner } from './allowlist.js';
 const { App } = pkg;
 
-const required = ['SLACK_BOT_TOKEN', 'SLACK_SIGNING_SECRET', 'SLACK_APP_TOKEN', 'SLACK_USER_ID'];
+const required = ['SLACK_BOT_TOKEN', 'SLACK_SIGNING_SECRET', 'SLACK_APP_TOKEN'];
 for (const k of required) {
   if (!process.env[k]) {
     throw new Error(`Missing ${k}. Set it in .env`);

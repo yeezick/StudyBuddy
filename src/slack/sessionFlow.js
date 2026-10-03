@@ -5,6 +5,7 @@ import { getConcepts } from '../lib/concepts.js';
 import { startQuiz, registerQuizCompletion } from './quizFlow.js';
 import { scheduleJob, removeJob, getSettings } from '../scheduler/jobs.js';
 import { nextLocalTime } from '../lib/time.js';
+import { slackUserIdFor } from '../lib/resolveUser.js';
 
 const SEGMENT_MINUTES = 45;
 const SYNTH_WARNING_MINUTES = 40;
@@ -103,7 +104,7 @@ async function removeSegmentJobs(session) {
   await removeJob(`session-recall__${sessionId}__${n}`);
 }
 
-async function removeAllSessionJobs(session) {
+async function removeAllSessionJobs(userId, session) {
   const { sessionId, segments = [] } = session;
   for (let i = 0; i < segments.length; i++) {
     await removeJob(`session-synth__${sessionId}__${i}`);
@@ -111,7 +112,7 @@ async function removeAllSessionJobs(session) {
     await removeJob(`break__${sessionId}__${i}`);
   }
   await removeJob(`session-end__${sessionId}`);
-  await removeJob(`session-wrap-morning__${process.env.SINGLE_USER_ID}`);
+  await removeJob(`session-wrap-morning__${userId}`);
 }
 
 // ── Session init helpers ──────────────────────────────────────────────────────
@@ -456,7 +457,7 @@ export async function handleSessionEnd(client, userId, sessionId) {
 export async function handleSessionWrapMorning(client, userId, sessionId) {
   const session = await loadSession(userId);
   const channelId = session?.slackChannelId;
-  const slackUserId = session?.slackUserId ?? process.env.SLACK_USER_ID;
+  const slackUserId = session?.slackUserId ?? slackUserIdFor(userId);
   if (!channelId) return;
 
   await startQuiz(client, userId, slackUserId, channelId, {}, {
@@ -549,7 +550,7 @@ export function registerSessionHandlers() {
       const { userId: uid, sessionId } = JSON.parse(body.actions[0].value);
       const session = await loadSession(uid);
       if (session && session.sessionId === sessionId) {
-        await removeAllSessionJobs(session);
+        await removeAllSessionJobs(uid, session);
       }
       await client.chat.postMessage({
         channel: body.channel.id,
