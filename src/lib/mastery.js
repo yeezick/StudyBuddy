@@ -3,8 +3,8 @@ import { defaultMastery, updateMastery, scoreFor, QUALITY_FOR_GRADE } from './sm
 import { isFsrsCard, fsrsFieldsFromSm2, reviewFsrs, retrievabilityAt } from './fsrs.js';
 
 // A card (`cards.state`) holds the FSRS fields at the top level, the SM-2 state under `sm2`,
-// and the fields every reader uses: score, nextReviewAt (= the active scheduler's due),
-// lastReviewedAt. Cards written before FSRS are flat SM-2 objects; they are converted the
+// and the fields every reader uses: nextReviewAt (= the active scheduler's due) and
+// lastReviewedAt. No score is stored: masteryScore computes it on read (DEC-056). Cards written before FSRS are flat SM-2 objects; they are converted the
 // next time they are scheduled (T4-4), never in bulk.
 
 let warnedScheduler = false;
@@ -45,7 +45,6 @@ export function normalizeCard(card, now = new Date()) {
   return {
     conceptId: card.conceptId,
     scheduler: 'fsrs',
-    score: card.score ?? scoreFor(sm2.repetitions),
     nextReviewAt: card.nextReviewAt ?? null,
     lastReviewedAt: card.lastReviewedAt ?? null,
     ...fsrsFieldsFromSm2(sm2, now),
@@ -58,14 +57,14 @@ export function normalizeCard(card, now = new Date()) {
 // `sm2`; FSRS only when it is the active scheduler, so a rollback never runs FSRS code.
 export function reviewCard(card, grade, now = new Date(), scheduler = schedulerName()) {
   const prev = scheduler === 'fsrs' ? normalizeCard(card, now) : card;
+  const { score: _stale, ...base } = prev; // drop a score stored by older code
   const prevSm2 = sm2Of(prev);
   const { score: _s, ...sm2Next } = updateMastery(prevSm2, QUALITY_FOR_GRADE[grade], now);
 
   const next = {
-    ...prev,
+    ...base,
     scheduler,
     sm2: sm2Next,
-    score: scoreFor(sm2Next.repetitions),
     lastReviewedAt: now.toISOString(),
   };
   let retrievability = null;
@@ -97,10 +96,10 @@ export const SETTLED_STABILITY_DAYS = 21;
 
 // Mastery shown by /mastery and the weekly digest, computed on read (nothing stored changes).
 // FSRS: recall probability now × how settled the memory is, R × min(1, S / 21); new card 0.
-// SCHEDULER=sm2 keeps the pre-FSRS score stored on the card, min(1, reps × 0.15).
+// SCHEDULER=sm2 keeps the pre-FSRS formula, min(1, sm2 reps × 0.15).
 export function masteryScore(card, now = new Date(), scheduler = schedulerName()) {
   if (!card) return 0;
-  if (scheduler === 'sm2') return card.score ?? 0;
+  if (scheduler === 'sm2') return scoreFor(sm2Of(card).repetitions ?? 0);
   const fsrsCard = normalizeCard(card, now);
   const r = retrievabilityAt(fsrsCard, now);
   if (r == null) return 0;

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { State } from 'ts-fsrs';
 import { gradeFor } from '../src/lib/grade.js';
 import { scheduler, memoryStateFromSm2, fsrsFieldsFromSm2 } from '../src/lib/fsrs.js';
-import { reviewCard, normalizeCard, schedulerName } from '../src/lib/mastery.js';
+import { reviewCard, normalizeCard, schedulerName, masteryScore } from '../src/lib/mastery.js';
 import { defaultMastery } from '../src/lib/sm2.js';
 
 const NOW = new Date('2026-10-04T12:00:00.000Z');
@@ -83,7 +83,7 @@ test('T4-4: normalizeCard converts lazily, keeps SM-2 under sm2 and leaves displ
     nextReviewAt: legacy.nextReviewAt, lastReviewedAt: legacy.lastReviewedAt,
   });
   assert.equal(c.nextReviewAt, legacy.nextReviewAt, 'no reschedule');
-  assert.equal(c.score, 0.3);
+  assert.equal('score' in c, false, 'the stored pre-FSRS score is dropped');
   assert.equal(c.convertedFromSm2At, NOW.toISOString());
   assert.equal(c.easeFactor, undefined, 'flat SM-2 fields moved under sm2');
   assert.equal(normalizeCard(c, NOW), c, 'already-converted card is returned as is');
@@ -101,23 +101,24 @@ test('T4-3: an FSRS review sets due = nextReviewAt and logs retrievability', () 
   // Whole days elapsed = 2, S = 6: factor = 0.9^(−1/0.1542) − 1 = 0.9805,
   // R = (1 + 0.9805·2/6)^−0.1542 = 0.9573.
   near(retrievability, 0.9573, 0.0005);
-  // SM-2 shadow: quality 4 on rep 2 → interval round(6 × 2.5) = 15, score = 3 × 0.15.
+  // SM-2 shadow: quality 4 on rep 2 → interval round(6 × 2.5) = 15; rollback score = 3 × 0.15.
   assert.equal(next.sm2.interval, 15);
   assert.equal(next.sm2.repetitions, 3);
-  near(next.score, 0.45);
+  assert.equal('score' in next, false, 'no score is stored');
+  near(masteryScore(next, NOW, 'sm2'), 0.45);
 });
 
-test('T4-3: Again counts a lapse and resets the display score; a new card has no retrievability', () => {
+test('T4-3: Again counts a lapse and resets the rollback score; a new card has no retrievability', () => {
   const again = reviewCard(legacy, 1, NOW, 'fsrs').next;
   assert.equal(again.lapses, 1);
   assert.equal(again.state, State.Relearning);
-  assert.equal(again.score, 0);
+  assert.equal(masteryScore(again, NOW, 'sm2'), 0);
 
   const first = reviewCard(defaultMastery('c2'), 3, NOW, 'fsrs');
   assert.equal(first.prev.state, State.New);
   assert.equal(first.retrievability, null);
   assert.equal(first.next.state, State.Learning);
-  near(first.next.score, 0.15);
+  near(masteryScore(first.next, NOW, 'sm2'), 0.15);
 });
 
 test('T4-7: SCHEDULER=sm2 schedules from state.sm2 and leaves FSRS fields untouched', () => {
@@ -133,6 +134,7 @@ test('T4-7: SCHEDULER=sm2 schedules from state.sm2 and leaves FSRS fields untouc
 
   // An unconverted card stays SM-2 only, with its state moved under sm2.
   const flat = reviewCard(legacy, 3, NOW, 'sm2').next;
+  assert.equal('score' in flat, false, 'rollback does not store a score either');
   assert.equal(flat.stability, undefined);
   assert.equal(flat.easeFactor, undefined);
   assert.equal(flat.sm2.interval, 15);

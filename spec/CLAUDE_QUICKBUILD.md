@@ -204,7 +204,6 @@ All data is JSON serialized. No ODM — raw JSON.stringify / JSON.parse througho
 {
   conceptId: "m1-c01",
   scheduler: "fsrs",             // which scheduler wrote it (SCHEDULER)
-  score: 0.45,                   // stored pre-FSRS score, min(1, sm2.repetitions × 0.15); shown only under SCHEDULER=sm2
   nextReviewAt: "2026-05-07T09:00:00Z",   // the active scheduler's due (= cards.due)
   lastReviewedAt: "2026-05-01T14:22:00Z",
   // FSRS (ts-fsrs Card), top level
@@ -216,6 +215,9 @@ All data is JSON serialized. No ODM — raw JSON.stringify / JSON.parse througho
   convertedFromSm2At: "…"        // only on cards converted from the pre-FSRS flat SM-2 shape
 }
 ```
+No score is stored on a card: `masteryScore` computes it on read (below). Older cards carried a
+`score` field; `scripts/reset-scores.js` removed it (and the old weekly snapshots) in production,
+and the next review drops it from any card it missed.
 Cards written before FSRS are flat SM-2 objects (`easeFactor`, `interval`, `repetitions` at the
 top level). They are converted the next time they are scheduled, never in bulk.
 
@@ -223,7 +225,7 @@ top level). They are converted the next time they are scheduled, never in bulk.
 - `masteryScore(card)` — the `/mastery` and weekly-digest score. FSRS: `R_now × min(1, S / 21)`
   (recall probability now × memory settledness; new card 0; flat SM-2 cards are scored through
   the conversion). R uses ts-fsrs `get_retrievability`, which counts whole days. Under
-  `SCHEDULER=sm2` it is the stored `score`.
+  `SCHEDULER=sm2` it is `min(1, sm2.repetitions × 0.15)`.
 - `isDue(card)` — the `/mastery` due list and the ping selector. A card counts as due no earlier
   than 1 h after its last review, so FSRS short-term steps (1m, 10m) do not show as due.
 

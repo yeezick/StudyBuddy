@@ -14,12 +14,12 @@ const CONCEPTS = [
   { id: 'c', name: 'Gamma', scope: { course: 'Test Course', module: 'Module 2' } },
 ];
 
-// The stored score is what /mastery shows under the SM-2 rollback (DEC-056 §1).
+// Under the SM-2 rollback /mastery shows min(1, reps × 0.15) (DEC-056 §1).
 test('labels come from the seed and fall back to the module name (SCHEDULER=sm2)', async () => {
   process.env.SCHEDULER = 'sm2';
   after(() => { delete process.env.SCHEDULER; });
   fake.store.set('concepts:u1', JSON.stringify(CONCEPTS));
-  fake.store.set('mastery:u1:a', JSON.stringify({ conceptId: 'a', score: 0.6, nextReviewAt: '2000-01-01T00:00:00Z' }));
+  fake.store.set('mastery:u1:a', JSON.stringify({ conceptId: 'a', repetitions: 4, nextReviewAt: '2000-01-01T00:00:00Z' }));
 
   const snapshot = await buildMasterySnapshot('u1');
   assert.deepEqual(snapshot.modules.map((m) => m.label), ['Getting Started', 'Module 2']);
@@ -40,7 +40,7 @@ test('T4b-2/3: under FSRS the snapshot scores R × min(1, S/21) and skips short-
   const now = Date.now();
   const at = (ms) => new Date(now + ms).toISOString();
   const card = (id, stability, reviewedAgo, dueIn) => ({
-    conceptId: id, scheduler: 'fsrs', score: 0.9, stability, difficulty: 5, elapsed_days: 0,
+    conceptId: id, scheduler: 'fsrs', stability, difficulty: 5, elapsed_days: 0,
     scheduled_days: 0, learning_steps: 0, reps: 6, lapses: 0, state: 2,
     last_review: at(-reviewedAgo), lastReviewedAt: at(-reviewedAgo), due: at(dueIn), nextReviewAt: at(dueIn),
   });
