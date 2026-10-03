@@ -2,7 +2,6 @@ import './lib/env.js';
 import express from 'express';
 import { redis } from './redis.js';
 import { seedIfEmpty } from './lib/concepts.js';
-import { store } from './store/index.js';
 import { assertMcpAuthConfigured, requireBearer } from './lib/auth.js';
 import { assertOwnerConfigured } from './lib/config.js';
 import { bootUserIds } from './lib/resolveUser.js';
@@ -42,7 +41,6 @@ app.get('/health', async (req, res) => {
   }
   res.status(200).json({
     status: 'ok',
-    storeBackend: store.backend,
     deps: { redis: redisState, ...depSnapshot() },
     timestamp: new Date().toISOString(),
   });
@@ -55,22 +53,20 @@ registerSessionHandlers();
 registerMessageRouter();
 
 // Slack and BullMQ connect after the port is bound, so /health answers even if they are slow or down.
-// Seeding and the scheduler wait for the store (Postgres runs its migrations in init).
 async function startServices() {
-  const storeReady = track('store', () => store.init());
   await Promise.all([
-    storeReady.then(() => track('seed', () => Promise.all(userIds.map((id) => seedIfEmpty(id))))),
+    track('seed', () => Promise.all(userIds.map((id) => seedIfEmpty(id)))),
     track('slack', async () => {
       await boltApp.init();
       await boltApp.start();
     }),
-    storeReady.then(() => track('scheduler', () => startScheduler(boltApp.client, userIds, {
+    track('scheduler', () => startScheduler(boltApp.client, userIds, {
       synth:       (job) => handleSessionSynth(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
       recall:      (job) => handleSessionRecall(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
       sessionEnd:  (job) => handleSessionEnd(boltApp.client, job.data.userId, job.data.sessionId),
       breakEnd:    (job) => handleBreakEnd(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
       wrapMorning: (job) => handleSessionWrapMorning(boltApp.client, job.data.userId, job.data.sessionId),
-    }))),
+    })),
   ]);
   console.log(`[boot] background start finished | ${JSON.stringify(depSnapshot())}`);
 }

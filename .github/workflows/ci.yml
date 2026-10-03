@@ -12,20 +12,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Throwaway Postgres for the store contract tests (both backends run in the same job).
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: studybuddy_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,14 +22,5 @@ jobs:
       - name: Syntax check
         run: npm run check
       # Offline: Redis/Upstash point at a closed port, Slack/Anthropic use fake tokens. No secrets.
-      # Postgres is the local service container above; the Postgres tests fail if it is missing.
-      # node-postgres reads the standard PG* variables itself; no connection URL is written down.
       - name: Offline tests
         run: npm test
-        env:
-          TEST_POSTGRES: '1'
-          PGHOST: localhost
-          PGPORT: '5432'
-          PGDATABASE: studybuddy_test
-          PGUSER: postgres
-          PGPASSWORD: test

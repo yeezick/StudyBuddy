@@ -1,6 +1,11 @@
 import { getConcepts } from '../lib/concepts.js';
 import { getAllMastery } from '../lib/mastery.js';
-import { store } from '../store/index.js';
+import { redis } from '../redis.js';
+
+function parse(raw) {
+  if (!raw) return null;
+  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+}
 
 function daysFromNow(isoString) {
   return Math.round((new Date(isoString) - Date.now()) / 86400000);
@@ -35,12 +40,13 @@ async function getNextReview(userId) {
 }
 
 export async function buildBriefSnapshot(userId) {
-  const [session, history] = await Promise.all([
-    store.getSession(userId),
-    store.getHistory(userId, 1),
+  const [sessionRaw, historyRaw] = await Promise.all([
+    redis.get(`session:${userId}`),
+    redis.lrange(`history:${userId}`, 0, 0),
   ]);
 
-  const lastQuiz = history[0] ?? null;
+  const session = parse(sessionRaw);
+  const lastQuiz = historyRaw?.[0] ? parse(historyRaw[0]) : null;
   const nextReview = await getNextReview(userId);
 
   return { session, lastQuiz, nextReview };
