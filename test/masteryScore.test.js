@@ -10,7 +10,7 @@ const ago = (ms) => new Date(NOW.getTime() - ms).toISOString();
 
 // A stored FSRS card (state 2 = Review) last reviewed `daysAgo` days before NOW.
 const fsrsCard = (stability, daysAgo, extra = {}) => ({
-  conceptId: 'c1', scheduler: 'fsrs', score: 0.45,
+  conceptId: 'c1', scheduler: 'fsrs', sm2: { repetitions: 3 },
   due: ago(-DAY), stability, difficulty: 5, elapsed_days: 0, scheduled_days: 1, learning_steps: 0,
   reps: 3, lapses: 0, state: 2, last_review: ago(daysAgo * DAY),
   lastReviewedAt: ago(daysAgo * DAY), nextReviewAt: ago(-DAY), ...extra,
@@ -44,10 +44,12 @@ test('T4b-2: an unconverted SM-2 card is scored through the T4-4 conversion (S =
   close(masteryScore(sm2, NOW, 'fsrs'), 0.9 * 6 / 21);
 });
 
-test('T4b-2: SCHEDULER=sm2 keeps the old score min(1, reps × 0.15)', () => {
-  assert.equal(masteryScore(fsrsCard(21, 21), NOW, 'sm2'), 0.45);
-  assert.equal(masteryScore({ conceptId: 'c1', score: 0.3, repetitions: 2 }, NOW, 'sm2'), 0.3);
+test('T4b-2: SCHEDULER=sm2 keeps the old formula min(1, reps × 0.15), computed, never stored', () => {
+  assert.ok(Math.abs(masteryScore(fsrsCard(21, 21), NOW, 'sm2') - 0.45) < 1e-9);
+  assert.ok(Math.abs(masteryScore({ conceptId: 'c1', repetitions: 2 }, NOW, 'sm2') - 0.3) < 1e-9);
+  assert.equal(masteryScore({ conceptId: 'c1', score: 0.9, repetitions: 0 }, NOW, 'sm2'), 0, 'a stale stored score is ignored');
   assert.equal(masteryScore({ conceptId: 'c1' }, NOW, 'sm2'), 0);
+  assert.equal(masteryScore({ conceptId: 'c1', repetitions: 10 }, NOW, 'sm2'), 1);
 });
 
 test('T4b-3: due lists ignore short-term dues until 1 h after the review', () => {
