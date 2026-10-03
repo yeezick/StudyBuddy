@@ -2,7 +2,7 @@
 
 An AI-powered study partner that lives in your Slack. It quizzes you on your own material using spaced repetition, tracks your mastery over time, and sends you quiz pings throughout the day — all from your phone via Slack's native iOS app, no frontend required.
 
-![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)
+![Node](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)
 
 ---
 
@@ -80,6 +80,10 @@ Open `.env` and fill in each value. Where to find them:
 | `REDIS_URL` | Upstash console → your database → ioredis connection string |
 | `SINGLE_USER_ID` | A short identifier for your Redis keys — e.g. your first name or `user1` |
 | `USER_TIMEZONE` | Your local timezone in tz format, e.g. `America/New_York` |
+| `MCP_AUTH_TOKEN` | Any long random string (e.g. `openssl rand -hex 32`). MCP clients must send `Authorization: Bearer <token>`. Required when `NODE_ENV=production` — the server won't start without it |
+| `ANTHROPIC_MODEL` | Optional. Overrides the default model (`claude-sonnet-4-6`) |
+
+The bot only answers `SLACK_USER_ID`: commands, button taps and messages from anyone else are silently dropped.
 
 ### 3. Create your Slack app
 
@@ -106,11 +110,22 @@ railway up
 
 Set your environment variables in the Railway dashboard under your project's Variables tab.
 
-**Local development:**
+Railway health-checks `GET /health`. The server binds its port first and connects Slack and Redis/BullMQ in the background, so `/health` answers right away and reports each dependency's state (`ok`, `starting`, `reconnecting`, `error`).
+
+**Local development** (Node 20+):
 
 ```bash
 npm run dev
 ```
+
+**Tests** (offline — no Slack, Redis or Anthropic needed):
+
+```bash
+npm test          # unit + boot tests
+npm run check     # node --check on every JS file
+```
+
+`scripts/test-*.js` are live smoke tests that hit real services with your `.env`.
 
 The server will seed your concept library on first boot if Redis is empty — from `SEED_PATH` if set, otherwise the bundled example (see [Using your own material](#using-your-own-material)).
 
@@ -201,7 +216,7 @@ free-response questions from them without needing additional context.
 
 Save the result outside git (e.g. `private/content/concepts-seed.json`), set `SEED_PATH` to it, and restart the server. On first boot it will seed Redis automatically.
 
-If you want to push new concepts later without restarting the server, connect an MCP client (such as Claude's desktop app with MCP configured) to the `/mcp` endpoint — the `add_concepts` tool merges new concepts into Redis without overwriting existing mastery data.
+If you want to push new concepts later without restarting the server, connect an MCP client (such as Claude's desktop app with MCP configured) to `/mcp/sse` with the header `Authorization: Bearer <MCP_AUTH_TOKEN>` — the `add_concepts` tool merges new concepts into Redis without overwriting existing mastery data.
 
 ---
 
