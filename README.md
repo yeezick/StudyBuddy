@@ -82,6 +82,8 @@ Open `.env` and fill in each value. Where to find them:
 | `USER_TIMEZONE` | Your local timezone in tz format, e.g. `America/New_York` |
 | `MCP_AUTH_TOKEN` | Any long random string (e.g. `openssl rand -hex 32`). MCP clients must send `Authorization: Bearer <token>`. Required when `NODE_ENV=production` — the server won't start without it |
 | `ANTHROPIC_MODEL` | Optional. Overrides the default model (`claude-sonnet-4-6`) |
+| `STORE_BACKEND` | Optional. `redis` (default) keeps all app data in Upstash. `postgres` keeps records (users, concepts, cards, review log, sessions, history) in Postgres. Quizzes and job queues stay in Redis either way |
+| `DATABASE_URL` | Only with `STORE_BACKEND=postgres`: a Postgres connection string (e.g. Neon). Migrations run on boot, or by hand with `npm run db:migrate` |
 
 The bot only answers `SLACK_USER_ID`: commands, button taps and messages from anyone else are silently dropped.
 
