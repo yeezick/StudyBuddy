@@ -27,6 +27,18 @@ function boot(extraEnv = {}) {
   return { child, output: () => output };
 }
 
+// Resolves when the server prints its "listening" line. The 2 s /health budget is measured
+// from there, not from process spawn, so slow module loading on a busy machine is not
+// counted against it (DEC-056 §4).
+async function waitForListening(output, deadlineMs = 15000) {
+  const start = Date.now();
+  while (Date.now() - start < deadlineMs) {
+    if (/listening on port/.test(output())) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error(`no "listening" line within ${deadlineMs}ms`);
+}
+
 async function pollHealth(port, deadlineMs) {
   const start = Date.now();
   while (Date.now() - start < deadlineMs) {
@@ -44,6 +56,7 @@ test('S0-4: /health answers within 2 s with Redis and Slack unreachable; /mcp ne
   const port = await freePort();
   const { child, output } = boot({ PORT: String(port) });
   try {
+    await waitForListening(output);
     const { res, elapsed } = await pollHealth(port, 2000);
     assert.equal(res.status, 200);
     const body = await res.json();
@@ -89,6 +102,7 @@ test('T1-5: boot with STORE_BACKEND=postgres migrates, seeds through the store a
   // The child gets a minimal env: hand it the PG* connection variables plus its own schema.
   const { child, output } = boot({ ...pgEnv(), PGOPTIONS: `-c search_path=${schema}`, PORT: String(port), STORE_BACKEND: 'postgres' });
   try {
+    await waitForListening(output);
     await pollHealth(port, 2000);
     let body;
     for (let i = 0; i < 50; i++) {

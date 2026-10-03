@@ -1,5 +1,5 @@
 import './helpers/env.js';
-import { test, beforeEach, afterEach } from 'node:test';
+import { test, beforeEach, afterEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { stubRedis } from './helpers/fakeRedis.js';
 import { buildMasterySnapshot, formatMasteryBlocks } from '../src/slack/masteryFlow.js';
@@ -14,7 +14,10 @@ const CONCEPTS = [
   { id: 'c', name: 'Gamma', scope: { course: 'Test Course', module: 'Module 2' } },
 ];
 
-test('labels come from the seed and fall back to the module name', async () => {
+// The stored score is what /mastery shows under the SM-2 rollback (DEC-056 §1).
+test('labels come from the seed and fall back to the module name (SCHEDULER=sm2)', async () => {
+  process.env.SCHEDULER = 'sm2';
+  after(() => { delete process.env.SCHEDULER; });
   fake.store.set('concepts:u1', JSON.stringify(CONCEPTS));
   fake.store.set('mastery:u1:a', JSON.stringify({ conceptId: 'a', score: 0.6, nextReviewAt: '2000-01-01T00:00:00Z' }));
 
@@ -31,4 +34,25 @@ test('labels come from the seed and fall back to the module name', async () => {
 
 test('empty library → null snapshot', async () => {
   assert.equal(await buildMasterySnapshot('nobody'), null);
+});
+
+test('T4b-2/3: under FSRS the snapshot scores R × min(1, S/21) and skips short-term dues', async () => {
+  const now = Date.now();
+  const at = (ms) => new Date(now + ms).toISOString();
+  const card = (id, stability, reviewedAgo, dueIn) => ({
+    conceptId: id, scheduler: 'fsrs', score: 0.9, stability, difficulty: 5, elapsed_days: 0,
+    scheduled_days: 0, learning_steps: 0, reps: 6, lapses: 0, state: 2,
+    last_review: at(-reviewedAgo), lastReviewedAt: at(-reviewedAgo), due: at(dueIn), nextReviewAt: at(dueIn),
+  });
+  fake.store.set('concepts:u1', JSON.stringify(CONCEPTS));
+  // Alpha: reviewed 2 h ago (R = 1, whole days), S = 10.5 → 0.5. Due 1 h ago → counts (≥ 1 h after review).
+  fake.store.set('mastery:u1:a', JSON.stringify(card('a', 10.5, 2 * 3600e3, -3600e3)));
+  // Beta: wrong 20 min ago, 10-minute relearning step already passed → not listed. S = 0.3.
+  fake.store.set('mastery:u1:b', JSON.stringify(card('b', 0.3, 20 * 60e3, -10 * 60e3)));
+  // Gamma: never reviewed → 0, not due.
+
+  const snapshot = await buildMasterySnapshot('u1');
+  assert.ok(Math.abs(snapshot.modules[0].avg - (0.5 + 0.3 / 21) / 2) < 1e-6, String(snapshot.modules[0].avg));
+  assert.equal(snapshot.modules[1].avg, 0);
+  assert.deepEqual(snapshot.dueToday, ['Alpha']);
 });

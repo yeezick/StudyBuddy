@@ -1,5 +1,5 @@
 import { getConcepts } from '../lib/concepts.js';
-import { getAllMastery } from '../lib/mastery.js';
+import { getAllMastery, masteryScore, isDue } from '../lib/mastery.js';
 
 function masteryBar(score) {
   const filled = Math.round(score * 10);
@@ -11,7 +11,11 @@ export async function buildMasterySnapshot(userId) {
   if (concepts.length === 0) return null;
 
   const masteryObjects = await getAllMastery(userId, concepts.map((c) => c.id));
+  return summarizeMastery(concepts, masteryObjects);
+}
 
+// Pure: concepts + their cards (same order) → the snapshot /mastery and the digest render.
+export function summarizeMastery(concepts, masteryObjects, now = new Date()) {
   // Group by module, preserving insertion order
   const byModule = new Map();
   for (let i = 0; i < concepts.length; i++) {
@@ -23,16 +27,15 @@ export async function buildMasterySnapshot(userId) {
   const courseName = concepts[0].scope?.course ?? null;
 
   const modules = [...byModule.entries()].map(([name, items]) => {
-    const avg = items.reduce((sum, { mastery }) => sum + (mastery.score ?? 0), 0) / items.length;
+    const avg = items.reduce((sum, { mastery }) => sum + masteryScore(mastery, now), 0) / items.length;
     // Display label comes from the seed (scope.moduleLabel on any concept in the module)
     const label = items.find(({ concept }) => concept.scope?.moduleLabel)?.concept.scope.moduleLabel;
     return { name, label: label ?? name, avg, count: items.length };
   });
 
-  const now = new Date();
   const dueToday = concepts
     .map((c, i) => ({ concept: c, mastery: masteryObjects[i] }))
-    .filter(({ mastery }) => mastery.nextReviewAt && new Date(mastery.nextReviewAt) <= now)
+    .filter(({ mastery }) => isDue(mastery, now))
     .map(({ concept }) => concept.name);
 
   return { courseName, modules, dueToday };

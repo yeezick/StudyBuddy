@@ -1,7 +1,7 @@
 import './helpers/env.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { slackUserIdOf, allowOnlyOwner } from '../src/slack/allowlist.js';
+import { slackUserIdOf, allowOnlyOwner, isNoiseEvent } from '../src/slack/allowlist.js';
 import { createBoltApp } from '../src/slack/app.js';
 
 const commandBody = (user) => ({ command: '/mastery', user_id: user, channel_id: 'D1', text: '', team_id: 'T1' });
@@ -56,4 +56,49 @@ test('S0-3: a real Bolt app runs handlers only for the owner', async () => {
     await app.processEvent({ body: messageBody(user), ack: async () => {} });
   }
   assert.deepEqual(seen.sort(), ['action:UOWNER', 'command:UOWNER', 'message:UOWNER']);
+});
+
+test('T4b-6: bot, subtype and user-less events are dropped silently before the allow-list', async () => {
+  const warns = [];
+  const realWarn = console.warn;
+  console.warn = (...a) => warns.push(a.join(' '));
+  try {
+    const noise = [
+      { type: 'event_callback', event: { type: 'message', bot_id: 'B1', text: 'quiz', channel: 'D1' } },
+      { type: 'event_callback', event: { type: 'message', subtype: 'message_changed', channel: 'D1', message: { bot_id: 'B1' } } },
+      { type: 'event_callback', event: { type: 'message', subtype: 'message_deleted', channel: 'D1' } },
+      { type: 'event_callback', event: { type: 'message', channel: 'D1', text: 'no user' } },
+    ];
+    let nexted = 0;
+    for (const body of noise) {
+      assert.equal(isNoiseEvent(body), true);
+      await allowOnlyOwner({ body, next: async () => { nexted++; } });
+    }
+    assert.equal(nexted, 0);
+    assert.equal(warns.length, 0, warns.join('\n'));
+    assert.equal(isNoiseEvent(messageBody('UOWNER')), false);
+    assert.equal(isNoiseEvent(commandBody('UOWNER')), false);
+  } finally {
+    console.warn = realWarn;
+  }
+});
+
+test('T4b-6: a real stranger is logged once, at warn', async () => {
+  const warns = [];
+  const errors = [];
+  const realWarn = console.warn;
+  const realError = console.error;
+  console.warn = (...a) => warns.push(a.join(' '));
+  console.error = (...a) => errors.push(a.join(' '));
+  try {
+    for (let i = 0; i < 3; i++) await allowOnlyOwner({ body: messageBody('UNOISY'), next: async () => {} });
+    await allowOnlyOwner({ body: commandBody('UNOISY'), ack: async () => {}, next: async () => {} });
+    await allowOnlyOwner({ body: messageBody('UOTHER'), next: async () => {} });
+  } finally {
+    console.warn = realWarn;
+    console.error = realError;
+  }
+  assert.equal(warns.filter((w) => w.includes('user=UNOISY')).length, 1);
+  assert.equal(warns.filter((w) => w.includes('user=UOTHER')).length, 1);
+  assert.equal(errors.length, 0);
 });

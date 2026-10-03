@@ -204,7 +204,7 @@ All data is JSON serialized. No ODM — raw JSON.stringify / JSON.parse througho
 {
   conceptId: "m1-c01",
   scheduler: "fsrs",             // which scheduler wrote it (SCHEDULER)
-  score: 0.45,                   // 0.0–1.0, min(1, sm2.repetitions × 0.15) — the /mastery display
+  score: 0.45,                   // stored pre-FSRS score, min(1, sm2.repetitions × 0.15); shown only under SCHEDULER=sm2
   nextReviewAt: "2026-05-07T09:00:00Z",   // the active scheduler's due (= cards.due)
   lastReviewedAt: "2026-05-01T14:22:00Z",
   // FSRS (ts-fsrs Card), top level
@@ -218,6 +218,14 @@ All data is JSON serialized. No ODM — raw JSON.stringify / JSON.parse througho
 ```
 Cards written before FSRS are flat SM-2 objects (`easeFactor`, `interval`, `repetitions` at the
 top level). They are converted the next time they are scheduled, never in bulk.
+
+**Read-side views (DEC-056, `src/lib/mastery.js`), computed on read, nothing stored:**
+- `masteryScore(card)` — the `/mastery` and weekly-digest score. FSRS: `R_now × min(1, S / 21)`
+  (recall probability now × memory settledness; new card 0; flat SM-2 cards are scored through
+  the conversion). R uses ts-fsrs `get_retrievability`, which counts whole days. Under
+  `SCHEDULER=sm2` it is the stored `score`.
+- `isDue(card)` — the `/mastery` due list and the ping selector. A card counts as due no earlier
+  than 1 h after its last review, so FSRS short-term steps (1m, 10m) do not show as due.
 
 ### Quiz state (key: `quiz:{quizId}`)
 ```javascript
@@ -542,7 +550,9 @@ get_reviews({ userId, topicId?, since?, limit? })
 // confidence (1–3, omitted if none), latencyMs (question shown → answer received),
 // grade (1–4, gradeFor: wrong→1 Again; right + confidence 1→2 Hard, 2/none→3 Good, 3→4 Easy),
 // prevState / nextState (the card before and after; nextState.retrievability_at_review =
-// FSRS recall probability at answer time, null for a new card or under SCHEDULER=sm2).
+// FSRS recall probability at answer time, null for a new card or under SCHEDULER=sm2;
+// nextState.idle_latency = latencyMs > 5 min, null when latency is unknown — raw latency is
+// kept, speed-based rules must skip idle answers; DEC-056 §3).
 ```
 
 All tools validate that userId matches the configured single-user ID for
