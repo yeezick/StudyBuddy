@@ -8,6 +8,10 @@ export const RETEST_DELAY_MS = 10 * 60 * 1000;
 export const RETEST_DAILY_CAP = 3;
 export const RETEST_TRIGGER = 'retest';
 
+// Quiz counts and recaps read history with this: a retest is not a quiz there (DEC-059 §5).
+// Its review events still count everywhere else.
+export const QUIZZES_ONLY = { excludeTriggers: [RETEST_TRIGGER] };
+
 export function isConfidentMiss(q) {
   return q.isCorrect === false && q.confidenceRating === 3;
 }

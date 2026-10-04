@@ -2,10 +2,11 @@ import crypto from 'node:crypto';
 import { store } from '../store/index.js';
 import { boltApp } from './app.js';
 import { getConcepts } from '../lib/concepts.js';
-import { generateQuestions } from '../ai/questionGen.js';
+import { generateQuestions, streamQuestion, leadType, appendInterleaved } from '../ai/questionGen.js';
 import { gradeMCQ, gradeFreeText } from '../ai/grading.js';
 import { matchConceptsToPrompt } from '../ai/conceptMatch.js';
 import { reviewAnswer } from '../lib/reviewEvents.js';
+import { CONFIDENCE_LABELS } from '../lib/grade.js';
 import { isConfidentMiss, claimRetest, RETEST_TRIGGER } from '../lib/retest.js';
 import { startExplainBack, clearExplainBack } from './explainBack.js';
 
@@ -20,6 +21,17 @@ const pendingFreeTextConfidence = new Map();
 
 // Callbacks invoked when a quiz completes: quizId → async fn(quiz)
 const quizCompletionCallbacks = new Map();
+
+// Questions after Q1, still being written (DEC-059 §4): quizId → batches in quiz order,
+// each { promise → { questions } | { error }, planned, done }
+const pendingQuestions = new Map();
+
+// Q1's answer key, still streaming after Q1 was posted: quizId → Promise<question>
+const pendingAnswerKeys = new Map();
+
+// MCQ answers being handled, `${quizId}:${questionId}`: a second tap while the first waits
+// (for the answer key or the next question) is ignored.
+const answering = new Set();
 
 // Listeners called once when any quiz ends: async fn(quiz, { reason: 'completed' | 'cancelled' })
 const quizEndListeners = [];
@@ -87,7 +99,7 @@ function confidenceBlocks(quizId, question, questionNum, total) {
     {
       type: 'actions',
       block_id: `conf_${quizId}_${question.id}`,
-      elements: ['Low', 'Medium', 'High'].map((label, i) => ({
+      elements: CONFIDENCE_LABELS.map((label, i) => ({
         type: 'button',
         action_id: `quiz_confidence_${i + 1}`,
         text: { type: 'plain_text', text: label },
@@ -98,7 +110,7 @@ function confidenceBlocks(quizId, question, questionNum, total) {
 }
 
 function answerBlocks(quizId, question, questionNum, total, confidenceLevel) {
-  const confLabel = ['Low', 'Medium', 'High'][confidenceLevel - 1];
+  const confLabel = CONFIDENCE_LABELS[confidenceLevel - 1];
   return [
     {
       type: 'section',
@@ -129,7 +141,7 @@ function answerBlocks(quizId, question, questionNum, total, confidenceLevel) {
 }
 
 function resultBlocks(question, questionNum, total, gradeResult, confidenceLevel) {
-  const confLabel = ['Low', 'Medium', 'High'][confidenceLevel - 1];
+  const confLabel = CONFIDENCE_LABELS[confidenceLevel - 1];
   const status = gradeResult.isCorrect ? '\u2705 Correct' : '\u274c Wrong';
   const correctNote = !gradeResult.isCorrect
     ? `  _(correct: ${question.correctAnswer.trim().charAt(0)})_`
@@ -163,7 +175,7 @@ function freetextConfidenceBlocks(quizId, question, questionNum, total) {
     {
       type: 'actions',
       block_id: `ftconf_${quizId}_${question.id}`,
-      elements: ['Low', 'Medium', 'High'].map((label, i) => ({
+      elements: CONFIDENCE_LABELS.map((label, i) => ({
         type: 'button',
         action_id: `quiz_freetext_confidence_${i + 1}`,
         text: { type: 'plain_text', text: label },
@@ -174,7 +186,7 @@ function freetextConfidenceBlocks(quizId, question, questionNum, total) {
 }
 
 function freetextResultBlocks(question, gradeResult, confidenceLevel) {
-  const confLabel = ['Low', 'Medium', 'High'][confidenceLevel - 1];
+  const confLabel = CONFIDENCE_LABELS[confidenceLevel - 1];
   const status = gradeResult.isCorrect ? '\u2705 Correct' : '\u274c Incorrect';
   return [
     {
@@ -200,7 +212,7 @@ async function flagConfidentMiss(quiz, q) {
 async function postQuestion(client, quiz, index) {
   const q = quiz.questions[index];
   const questionNum = index + 1;
-  const total = quiz.questions.length;
+  const total = totalOf(quiz);
 
   q.shownAt = new Date().toISOString();
   await saveQuiz(quiz);
@@ -228,6 +240,7 @@ async function postQuestion(client, quiz, index) {
     if (!freshQuiz || freshQuiz.status !== 'in_progress') return;
 
     const freshQ = freshQuiz.questions[index];
+    await ensureAnswerKey(freshQuiz, freshQ);
     const gradeResult = await gradeFreeText(freshQ, messageText);
 
     freshQ.userAnswer = messageText;
@@ -253,6 +266,8 @@ async function postQuestion(client, quiz, index) {
 }
 
 async function completeQuiz(client, quiz) {
+  pendingQuestions.delete(quiz.quizId);
+  pendingAnswerKeys.delete(quiz.quizId);
   quiz.status = 'completed';
   quiz.completedAt = new Date().toISOString();
 
@@ -324,6 +339,93 @@ async function completeQuiz(client, quiz) {
   await notifyQuizEnd(quiz, 'completed');
 }
 
+function toQuizQuestion(q, i) {
+  return {
+    id: `q${i + 1}`,
+    conceptId: q.conceptId,
+    type: q.type,
+    prompt: q.prompt,
+    options: q.options ?? [],
+    correctAnswer: q.correctAnswer,
+    explanation: q.explanation,
+    userAnswer: null,
+    isCorrect: null,
+    confidenceRating: null,
+    pointsEarned: null,
+    scheduled: false,
+    shownAt: null,
+    answeredAt: null,
+    reviewRecorded: false,
+  };
+}
+
+// The "total" in "Qn/total": questions in hand plus those still being written.
+const totalOf = (quiz) => quiz.total ?? quiz.questions.length;
+
+// Waits, if needed, for the answer key of a question posted while it was still streaming.
+async function ensureAnswerKey(quiz, q) {
+  if (typeof q.correctAnswer === 'string') return;
+  const pendingKey = pendingAnswerKeys.get(quiz.quizId);
+  if (!pendingKey) throw new Error(`answer key lost | quizId=${quiz.quizId} | q=${q.id}`);
+  const full = await pendingKey;
+  q.correctAnswer = full.correctAnswer;
+  q.explanation = full.explanation;
+}
+
+function plannedTotal(quiz) {
+  const batches = pendingQuestions.get(quiz.quizId) ?? [];
+  return quiz.questions.length + batches.reduce((n, batch) => n + batch.planned, 0);
+}
+
+function startBatch(args) {
+  const batch = { planned: args.count, done: false };
+  batch.promise = generateQuestions(args)
+    .then((qs) => ({ questions: qs.slice(0, args.count) }), (error) => ({ error }))
+    .finally(() => { batch.done = true; });
+  return batch;
+}
+
+// Adds the next batch written in the background once the quiz needs its next question,
+// waiting for it if needed. A failed batch is skipped; when none is left (all failed, or lost
+// to a restart) the quiz ends with the questions it has.
+async function fillQuestions(client, quiz, nextIndex) {
+  const batches = pendingQuestions.get(quiz.quizId) ?? [];
+  let failed = false;
+  while (nextIndex >= quiz.questions.length && batches.length) {
+    const batch = batches[0];
+    if (!batch.done) {
+      await client.chat.postMessage({ channel: quiz.slackChannelId, text: '_Writing the next question\u2026_' });
+    }
+    const { questions, error } = await batch.promise;
+    if (batches[0] === batch) batches.shift();
+    if (error) {
+      failed = true;
+      console.error(`[quiz] background questions failed | quizId=${quiz.quizId} | ${error.message}`);
+      continue;
+    }
+    const added = appendInterleaved(quiz.questions, questions).slice(quiz.questions.length);
+    quiz.questions.push(...added.map((q, i) => toQuizQuestion(q, quiz.questions.length + i)));
+  }
+  if (batches.length === 0) pendingQuestions.delete(quiz.quizId);
+  quiz.total = plannedTotal(quiz);
+  if (failed && nextIndex >= quiz.questions.length) {
+    await client.chat.postMessage({
+      channel: quiz.slackChannelId,
+      text: "\u26a0\ufe0f Couldn't write the rest of this quiz \u2014 finishing with what you've answered.",
+    });
+  }
+}
+
+// Concepts for the questions written alone, picked at random so the batch written alongside
+// them can leave them out. Only when every question can have its own concept.
+function pickLeads(concepts, count, n = 2, random = Math.random) {
+  if (count < 2 || concepts.length < count) return [];
+  const pool = [...concepts];
+  const leads = [];
+  while (leads.length < Math.min(n, count)) leads.push(pool.splice(Math.floor(random() * pool.length), 1)[0]);
+  return leads;
+}
+
 async function selectConcepts(userId, input) {
   if (input.mode === 'free_form_prompt') {
     const all = await getConcepts(userId);
@@ -354,6 +456,8 @@ export async function cancelQuiz(userId) {
   }
 
   pendingReplies.delete(`${quiz.slackUserId}:${quiz.slackChannelId}`);
+  pendingQuestions.delete(quizId);
+  pendingAnswerKeys.delete(quizId);
   for (const key of pendingFreeTextConfidence.keys()) {
     if (key.startsWith(`${quizId}:`)) pendingFreeTextConfidence.delete(key);
   }
@@ -370,6 +474,7 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
     concepts: conceptsOverride = null,
     distribution: distributionOverride = null,
     count: countOverride = null,
+    requestedAt = Date.now(), // when the user asked (command received), for quiz_ready_ms
   } = options;
 
   const concepts = conceptsOverride ?? await selectConcepts(userId, input);
@@ -383,38 +488,47 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
 
   const count = countOverride ?? Math.min(MAX_QUESTIONS, concepts.length);
   const distribution = distributionOverride ?? ON_DEMAND_DISTRIBUTION;
-  const rawQuestions = await generateQuestions({
-    concepts,
-    count,
-    distribution,
-    freeFormPrompt: input.freeFormPrompt ?? null,
-  });
+  const freeFormPrompt = input.freeFormPrompt ?? null;
+  const solo = { count: 1, distribution: { [leadType(distribution)]: 1 }, freeFormPrompt };
 
-  const questions = rawQuestions.slice(0, count).map((q, i) => ({
-    id: `q${i + 1}`,
-    conceptId: q.conceptId,
-    type: q.type,
-    prompt: q.prompt,
-    options: q.options ?? [],
-    correctAnswer: q.correctAnswer,
-    explanation: q.explanation,
-    userAnswer: null,
-    isCorrect: null,
-    confidenceRating: null,
-    pointsEarned: null,
-    scheduled: false,
-    shownAt: null,
-    answeredAt: null,
-    reviewRecorded: false,
-  }));
-
+  // Q1 posts in seconds (DEC-059 §4): Q1 and Q2 are each written alone, on concepts picked
+  // here, while the rest are written at the same time from the other concepts. When the
+  // concepts are too few to keep apart, Q1 is written first and the rest are told what it asked.
+  const leads = pickLeads(concepts, count);
   const quizId = crypto.randomUUID();
+  const batches = [];
+  const firstConcepts = leads.length ? [leads[0]] : concepts;
+  // Streamed: Q1 is posted once its prompt and options are written; its answer key follows.
+  const firstCall = streamQuestion({ ...solo, concepts: firstConcepts });
+  if (leads.length) {
+    const others = concepts.filter((c) => !leads.includes(c));
+    if (leads[1]) batches.push(startBatch({ ...solo, concepts: [leads[1]] }));
+    if (count > leads.length) batches.push(startBatch({ concepts: others, count: count - leads.length, distribution, freeFormPrompt }));
+  }
+  if (batches.length) pendingQuestions.set(quizId, batches);
+
+  let first;
+  try {
+    first = await firstCall.shown;
+  } catch (err) {
+    pendingQuestions.delete(quizId);
+    throw err;
+  }
+  if (typeof first.correctAnswer !== 'string') {
+    firstCall.full.catch(() => {}); // a failure surfaces when the answer key is needed
+    pendingAnswerKeys.set(quizId, firstCall.full);
+  }
+  if (!leads.length && count > 1) {
+    pendingQuestions.set(quizId, [startBatch({ concepts, count: count - 1, distribution, freeFormPrompt, asked: [first] })]);
+  }
+
   const quiz = {
     quizId,
     userId,
     trigger,
     input,
-    questions,
+    questions: [toQuizQuestion(first, 0)],
+    total: count,
     currentQuestionIndex: 0,
     status: 'in_progress',
     score: null,
@@ -428,6 +542,7 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
   await store.setActiveQuizId(userId, quizId);
   clearExplainBack(slackUserId, channelId);
   await postQuestion(client, quiz, 0);
+  console.log(`[quiz] ready | quizId=${quizId} | trigger=${trigger} | quiz_ready_ms=${Date.now() - requestedAt}`);
   return quiz;
 }
 
@@ -449,8 +564,8 @@ export async function onQuizConfidence({ ack, body, client }) {
     await client.chat.update({
       channel: body.channel.id,
       ts: body.message.ts,
-      blocks: answerBlocks(quizId, q, idx + 1, quiz.questions.length, level),
-      text: `Q${idx + 1}/${quiz.questions.length}: ${q.prompt}`,
+      blocks: answerBlocks(quizId, q, idx + 1, totalOf(quiz), level),
+      text: `Q${idx + 1}/${totalOf(quiz)}: ${q.prompt}`,
     });
   } catch (err) {
     console.error(`[quiz_confidence] error | slackUser=${body.user?.id} | ${err.message}`);
@@ -460,6 +575,7 @@ export async function onQuizConfidence({ ack, body, client }) {
 
 export async function onQuizAnswer({ ack, body, client }) {
   await ack();
+  let lockKey = null;
   try {
     const { quizId, questionId, letter, confidenceLevel } = JSON.parse(body.actions[0].value);
     const quiz = await loadQuiz(quizId);
@@ -478,7 +594,12 @@ export async function onQuizAnswer({ ack, body, client }) {
       return;
     }
 
+    if (answering.has(`${quizId}:${questionId}`)) return;
+    lockKey = `${quizId}:${questionId}`;
+    answering.add(lockKey);
+
     const answeredAt = new Date().toISOString();
+    await ensureAnswerKey(quiz, q);
     const gradeResult = gradeMCQ(q, letter);
     q.userAnswer = letter;
     q.answeredAt = answeredAt;
@@ -490,11 +611,15 @@ export async function onQuizAnswer({ ack, body, client }) {
     await client.chat.update({
       channel: body.channel.id,
       ts: body.message.ts,
-      blocks: resultBlocks(q, idx + 1, quiz.questions.length, gradeResult, confidenceLevel),
-      text: `Q${idx + 1}/${quiz.questions.length}: ${q.prompt}`,
+      blocks: resultBlocks(q, idx + 1, totalOf(quiz), gradeResult, confidenceLevel),
+      text: `Q${idx + 1}/${totalOf(quiz)}: ${q.prompt}`,
     });
 
     const nextIndex = idx + 1;
+    if (nextIndex >= quiz.questions.length) {
+      await saveQuiz(quiz); // records the answer before a possibly long wait for the next questions
+      await fillQuestions(client, quiz, nextIndex);
+    }
     if (nextIndex >= quiz.questions.length) {
       await saveQuiz(quiz);
       await completeQuiz(client, quiz);
@@ -505,6 +630,8 @@ export async function onQuizAnswer({ ack, body, client }) {
   } catch (err) {
     console.error(`[quiz_answer] error | slackUser=${body.user?.id} | ${err.message}`);
     await client.chat.postEphemeral({ channel: body.channel.id, user: body.user.id, text: '⚠️ Something went wrong. Please try again.' }).catch(() => {});
+  } finally {
+    if (lockKey) answering.delete(lockKey);
   }
 }
 
@@ -538,6 +665,7 @@ export async function onFreeTextConfidence({ ack, body, client }) {
     });
 
     const nextIndex = index + 1;
+    if (nextIndex >= quiz.questions.length) await fillQuestions(client, quiz, nextIndex);
     if (nextIndex >= quiz.questions.length) {
       await completeQuiz(client, quiz);
     } else {

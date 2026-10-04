@@ -88,8 +88,10 @@ export function createRedisStore({ redis, primaryUserId = null }) {
       await redis.ltrim(keys.history(userId), 0, HISTORY_LIMIT - 1);
     },
 
-    async getHistory(userId, limit) {
-      return (await redis.lrange(keys.history(userId), 0, limit - 1)).map(parse);
+    async getHistory(userId, limit, { excludeTriggers = [] } = {}) {
+      if (excludeTriggers.length === 0) return (await redis.lrange(keys.history(userId), 0, limit - 1)).map(parse);
+      const all = (await redis.lrange(keys.history(userId), 0, -1)).map(parse);
+      return all.filter((e) => !excludeTriggers.includes(e.trigger)).slice(0, limit);
     },
 
     getSession: async (userId) => parse(await redis.get(keys.session(userId))),

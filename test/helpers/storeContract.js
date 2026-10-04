@@ -218,6 +218,35 @@ export function storeContract(name, makeStore) {
     assert.deepEqual(read.nextState, nextState);
   });
 
+  t('review events: a skipped explain-back round-trips with no answer, score or grade (DEC-059)', async () => {
+    const nextState = { scheduled: false, skipped: true, prompt: 'why?' };
+    await store.appendReviewEvent({
+      userId: 'u1', conceptId: 'c1', trigger: 'on_demand', quizId: 'q-1', itemType: 'explain_back',
+      correct: null, score: null, confidence: null, latencyMs: 4000, grade: null, prevState: null, nextState,
+      ts: '2026-10-04T12:00:00.000Z',
+    });
+    const [read] = await store.getReviewEvents('u1');
+    assert.equal(read.itemType, 'explain_back');
+    assert.equal(read.correct ?? null, null);
+    assert.equal(read.score ?? null, null);
+    assert.equal(read.grade ?? null, null);
+    assert.deepEqual(read.nextState, nextState);
+  });
+
+  t('history: excludeTriggers leaves those entries out before the limit (DEC-059)', async () => {
+    const entry = (quizId, trigger) => ({ quizId, trigger, score: 50, conceptIds: ['c1'], completedAt: '2026-10-04T10:00:00.000Z' });
+    await store.addHistory('u1', entry('q1', 'on_demand'));
+    await store.addHistory('u1', entry('q2', 'scheduled_ping'));
+    await store.addHistory('u1', { ...entry('q3'), trigger: undefined }); // entries from before triggers were recorded
+    await store.addHistory('u1', entry('r1', 'retest'));
+    await store.addHistory('u1', entry('r2', 'retest'));
+    const quizzesOnly = { excludeTriggers: ['retest'] };
+    assert.deepEqual((await store.getHistory('u1', 2, quizzesOnly)).map((e) => e.quizId), ['q3', 'q2']);
+    assert.deepEqual((await store.getHistory('u1', 10, quizzesOnly)).map((e) => e.quizId), ['q3', 'q2', 'q1']);
+    assert.deepEqual((await store.getHistory('u1', 2)).map((e) => e.quizId), ['r2', 'r1'], 'no filter by default');
+    assert.deepEqual((await store.getHistory('u1', 10, { excludeTriggers: [] })).length, 5);
+  });
+
   t('retest slots: claimed once per key, capped per user-day (DEC-058)', async () => {
     assert.equal(await store.claimRetest('u1', '2026-10-03', 'quiz-1:c1', 2), 'claimed');
     assert.equal(await store.claimRetest('u1', '2026-10-03', 'quiz-1:c1', 2), 'duplicate');

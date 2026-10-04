@@ -2,14 +2,19 @@ import { store } from '../store/index.js';
 import { boltApp } from './app.js';
 import { getConcepts } from '../lib/concepts.js';
 import { gradeFreeText } from '../ai/grading.js';
+import { callJSON } from '../ai/anthropic.js';
 import { gradeFor } from '../lib/grade.js';
-import { buildExplainBackEvent, latencyMs, isIdleLatency } from '../lib/reviewEvents.js';
+import { buildExplainBackEvent, buildExplainBackSkipEvent, latencyMs, isIdleLatency } from '../lib/reviewEvents.js';
 
 // Explain-back (DEC-058 §2): when a quiz completes, one optional "why" prompt on the weakest
-// concept answered in it. The reply is AI-graded and logged; the card is not rescheduled.
+// concept answered in it. The reply is AI-graded and logged, a Skip is logged too (DEC-059 §3);
+// the card is never rescheduled.
 
 // An unanswered prompt stops claiming the user's messages after this long.
 export const EXPLAIN_BACK_TTL_MS = 30 * 60 * 1000;
+
+// The tailored question (DEC-059 §1) gets this long before the fixed template is used instead.
+export const EXPLAIN_BACK_QUESTION_TIMEOUT_MS = 5000;
 
 // `${slackUserId}:${channelId}` → { quizId, userId, trigger, conceptId, prompt, shownAt, ts }
 const pending = new Map();
@@ -35,6 +40,33 @@ export function pickWeakest(questions) {
 
 export const explainBackPrompt = (conceptName) =>
   `In 1–2 sentences, why does *${conceptName}* matter — what problem does it solve, and how?`;
+
+const QUESTION_SYSTEM = `You write one short explain-back question for a learner who just finished a quiz. It asks them to explain in their own words why something about the concept is true or matters, and it must be answerable from the concept summary. Return ONLY JSON: {"question": "..."}. No preamble, no markdown fences.`;
+
+// One short AI call writes the why-question from the concept summary and, when the learner
+// missed it, the quiz question they missed. An error, a timeout or an odd reply falls back to
+// the fixed template.
+export async function tailoredExplainBackPrompt({ name, summary, missedPrompt = null }, { timeoutMs = EXPLAIN_BACK_QUESTION_TIMEOUT_MS } = {}) {
+  const missed = missedPrompt ? `\nThe learner just got this quiz question on it wrong: "${missedPrompt}"` : '';
+  const user = `Concept: ${name}
+Summary: ${summary}${missed}
+
+Write one question that starts with "In 1–2 sentences, why" and ends with "?". At most 200 characters. Put the concept name in *single asterisks* if you use it.`;
+  try {
+    const reply = await callJSON({
+      system: QUESTION_SYSTEM, user, max_tokens: 200,
+      requestOptions: { signal: AbortSignal.timeout(timeoutMs), maxRetries: 0 },
+    });
+    const question = typeof reply?.question === 'string' ? reply.question.trim() : '';
+    if (!/^In 1\s*[–-]\s*2 sentences, why\b/i.test(question) || !question.endsWith('?') || question.length > 300) {
+      throw new Error(`unexpected reply: ${JSON.stringify(reply).slice(0, 120)}`);
+    }
+    return question;
+  } catch (err) {
+    console.warn(`[explain-back] tailored question failed, using the template | ${err.message}`);
+    return explainBackPrompt(name);
+  }
+}
 
 function promptBlocks(quizId, conceptId, prompt) {
   return [
@@ -75,7 +107,11 @@ export async function startExplainBack(client, quiz) {
   if (!weakest) return;
   const concepts = await getConcepts(quiz.userId);
   const concept = concepts.find((c) => c.id === weakest.conceptId);
-  const prompt = explainBackPrompt(concept?.name ?? weakest.conceptId);
+  const prompt = await tailoredExplainBackPrompt({
+    name: concept?.name ?? weakest.conceptId,
+    summary: concept?.summary ?? '',
+    missedPrompt: weakest.isCorrect === false ? weakest.prompt : null,
+  });
 
   const posted = await client.chat.postMessage({
     channel: quiz.slackChannelId,
@@ -118,7 +154,16 @@ export async function onExplainBackSkip({ ack, body, client }) {
   try {
     const key = keyFor(body.user.id, body.channel.id);
     const { quizId } = JSON.parse(body.actions[0].value);
-    if (pending.get(key)?.quizId === quizId) pending.delete(key);
+    const entry = pending.get(key);
+    if (entry?.quizId === quizId) {
+      pending.delete(key);
+      // A prompt already past its 30 min lapsed: that logs nothing, so a late Skip doesn't either.
+      const skippedAt = new Date().toISOString();
+      if (Date.parse(skippedAt) - Date.parse(entry.shownAt) <= EXPLAIN_BACK_TTL_MS) {
+        await store.appendReviewEvent(buildExplainBackSkipEvent({ ...entry, skippedAt }))
+          .catch((err) => console.error(`[explain-back] skip append failed | userId=${entry.userId} | quizId=${quizId} | ${err.message}`));
+      }
+    }
     await client.chat.update({
       channel: body.channel.id,
       ts: body.message.ts,

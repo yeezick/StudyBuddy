@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { z } from 'zod';
 import { store } from '../store/index.js';
+import { QUIZZES_ONLY } from '../lib/retest.js';
 import { getConcepts } from '../lib/concepts.js';
 import { getAllMastery } from '../lib/mastery.js';
 import { isKnownUser } from '../lib/resolveUser.js';
@@ -118,14 +119,15 @@ export function createMcpServer() {
   // get_history
   mcp.tool(
     'get_history',
-    'Returns last N assessment summaries from the user\'s quiz history.',
+    'Returns last N assessment summaries from the user\'s quiz history. Retests (trigger "retest") are left out unless includeRetests is true.',
     {
       userId: z.string(),
       limit: z.number().int().min(1).max(30).optional(),
+      includeRetests: z.boolean().optional(),
     },
-    async ({ userId, limit = 10 }) => {
+    async ({ userId, limit = 10, includeRetests = false }) => {
       validateUser(userId);
-      const entries = await store.getHistory(userId, limit);
+      const entries = await store.getHistory(userId, limit, includeRetests ? {} : QUIZZES_ONLY);
       return { content: [{ type: 'text', text: JSON.stringify(entries) }] };
     }
   );

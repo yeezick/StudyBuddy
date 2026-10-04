@@ -40,6 +40,7 @@ async function echo(client, channelId, text) {
 
 export function registerCommands() {
   boltApp.command('/quizinit', async ({ command, ack, client, respond, context }) => {
+    const requestedAt = Date.now();
     await ack();
     await echo(client, command.channel_id, 'Starting quiz');
     const parsed = parseQuizArgs(command.text);
@@ -54,7 +55,7 @@ export function registerCommands() {
 
     const { userId } = context;
     try {
-      await startQuiz(client, userId, command.user_id, command.channel_id, parsed);
+      await startQuiz(client, userId, command.user_id, command.channel_id, parsed, { requestedAt });
     } catch (err) {
       console.error(`[quizinit] startQuiz failed | userId=${userId} | ${err.message}`);
       await client.chat.postMessage({

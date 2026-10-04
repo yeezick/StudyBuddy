@@ -66,6 +66,26 @@ export function buildExplainBackEvent({ userId, quizId, trigger, conceptId, prom
   };
 }
 
+// A skipped explain-back (DEC-059 §3) is logged so the skip rate is measurable: no answer, no
+// grade, no reschedule.
+export function buildExplainBackSkipEvent({ userId, quizId, trigger, conceptId, prompt, shownAt, skippedAt }) {
+  return {
+    userId,
+    conceptId,
+    ts: skippedAt,
+    trigger,
+    quizId,
+    itemType: 'explain_back',
+    correct: null,
+    score: null,
+    confidence: null,
+    latencyMs: latencyMs({ shownAt, answeredAt: skippedAt }),
+    grade: null,
+    prevState: null,
+    nextState: { scheduled: false, skipped: true, prompt },
+  };
+}
+
 // Schedules the answer's card, then writes its event; both are marked on the question so
 // neither happens twice. A scheduling error propagates (the handler reports it and the
 // answer can be retried). An event store error is logged once and swallowed: losing an

@@ -17,7 +17,7 @@ import { ownerConfig } from '../lib/config.js';
 //   getQuiz(quizId), saveQuiz(quiz), deleteQuiz(quizId)
 //   getActiveQuizId(userId), setActiveQuizId(userId, quizId), clearActiveQuizId(userId)
 //   claimRetest(userId, day, key, cap) → 'claimed' | 'duplicate' | 'over_cap'
-//   addHistory(userId, entry), getHistory(userId, limit) → newest first
+//   addHistory(userId, entry), getHistory(userId, limit, { excludeTriggers }) → newest first
 //   getSession(userId) → latest saved session | null    saveSession(userId, session)
 //   getSettings(userId) → object | null                 saveSettings(userId, settings)
 //   getMasterySnapshot(userId, day), saveMasterySnapshot(userId, day, record)

@@ -359,9 +359,22 @@ Register all of these as slash commands in the Slack app manifest.
 
 ## Slack Quiz Flow (`src/slack/quizFlow.js`)
 
+**Question generation (DEC-059 §4):** Q1 posts in seconds. When every question can have its own
+concept, two concepts are picked at random: Q1 is written alone on the first (streamed, and
+posted as soon as its prompt and options are written; its answer key follows and an answer
+waits for it), Q2 alone on the second, and the rest at the same time from the other concepts.
+With fewer concepts, Q1 is written first and the rest are told what it asked. Batches are
+appended in order, reordered so no two consecutive questions share a concept. A failed batch is
+skipped (the total drops); if none is left the quiz ends with what was answered. A stream that
+breaks after Q1 was shown gets its answer key from a second call; one that fails before is
+retried once without streaming. Each quiz logs `[quiz] ready | quizId | trigger | quiz_ready_ms`
+(command received → Q1 posted).
+
+**Confidence labels (DEC-059 §2):** Guess / Medium / Sure, stored as 1 / 2 / 3.
+
 **MCQ delivery:**
 - Bot posts question text + 4 Block Kit button elements (A / B / C / D)
-- Before buttons: one set of confidence buttons [Low] [Medium] [High]
+- Before buttons: one set of confidence buttons [Guess] [Medium] [Sure]
   → user taps confidence first, then answer button
   → if user taps answer before confidence, prompt for confidence before processing
 - On answer tap: `block_actions` received, buttons disabled, graded reply posted inline
@@ -372,7 +385,7 @@ Register all of these as slash commands in the Slack app manifest.
 - Bolt `message` listener activated, scoped to `{ userId, channelId }`
 - Listener captures next DM message as answer, immediately deregisters
 - Answer sent to grading service; grade result is held pending confidence tap
-- Bot posts confidence prompt [Low] [Medium] [High] before revealing grade (DEC-009, DEC-025)
+- Bot posts confidence prompt [Guess] [Medium] [Sure] before revealing grade (DEC-009, DEC-025)
 - On confidence tap: card scheduled (FSRS) and review event written, feedback + grade posted, next question follows
 
 **On quiz completion:**
@@ -389,7 +402,7 @@ Register all of these as slash commands in the Slack app manifest.
   ```
 
 **Confident-miss retest (DEC-058 §1):**
-- A wrong answer with confidence High (Sure) reserves a retest slot for that quiz × concept
+- A wrong answer with confidence Sure reserves a retest slot for that quiz × concept
   (`store.claimRetest`, Redis key `retests:{userId}:{YYYY-MM-DD}`, local day, 2-day TTL). Cap 3
   per user per day; overflow is dropped and logged once. The answer's feedback gets one line.
 - When the quiz ends (completed or cancelled) a BullMQ `retest` job is added ~10 min out, job id
@@ -397,18 +410,26 @@ Register all of these as slash commands in the Slack app manifest.
   it fires, it waits 10 min, up to 3 times, then is dropped.
 - The retest is a one-question quiz, trigger `retest`: MCQ while the card is New/Learning, free
   text once it has graduated (Review/Relearning). Logged and FSRS-scheduled like any answer;
-  it never queues another retest and gets no explain-back.
+  it never queues another retest and gets no explain-back. It is not a quiz in history counts
+  (DEC-059 §5): the weekly "This week: n quizzes", `/brief`'s last quiz, the session recap and MCP
+  `get_history` (unless `includeRetests`) leave trigger `retest` out; its review events still
+  count everywhere (FSRS, calibration).
 
 **Explain-back (DEC-058 §2):**
 - On completion (not cancel, not a session warm-up, not a retest): one optional prompt on the
   weakest answered concept (lowest grade; tie → longest latency, idle ignored; then first asked),
-  with a Skip button. The next DM in that channel is the answer (routing: quiz answer >
+  with a Skip button. The question is written by one short AI call from the concept summary
+  (and the missed question, when the weakest answer was wrong), "In 1–2 sentences, why …?";
+  on error, an odd reply or after 5 s it falls back to the fixed template (DEC-059 §1). The next DM in that channel is the answer (routing: quiz answer >
   explain-back > session prompt > break detection). The prompt lapses after 30 min or when a new
   quiz starts.
 - The reply is graded by the free-text grader (expected answer = concept summary) and logged as
   a review event `item_type = explain_back`: `correct` = verdict, `score`, `grade` null,
   `prev_state` null, `next_state = { scheduled: false, prompt, explanation, feedback, idle_latency }`.
   The card is not rescheduled. Read them back with MCP `get_reviews`.
+- Skip (while the prompt is open) logs an `explain_back` event too: `correct`, `score`, `grade`
+  null, `next_state = { scheduled: false, skipped: true, prompt }`; no reschedule. A prompt that
+  lapses unanswered logs nothing (DEC-059 §3).
 
 **Weekly digest calibration (DEC-058 §3):** one line from the last 7 days of review events
 (explain-backs and answers without a confidence tap excluded): `Calibration (7 days): Guess x%
@@ -570,9 +591,10 @@ delete_concept({ userId, conceptId })
 // Remove a concept from the library.
 // Called by Cowork when a concept is duplicate or incorrect.
 
-get_history({ userId, limit? })
+get_history({ userId, limit?, includeRetests? })
 // Returns last N assessment summaries from history:userId.
-// Default limit 10. Called by Cowork for session prep context.
+// Default limit 10. Retests (trigger "retest") are left out unless includeRetests (DEC-059 §5).
+// Called by Cowork for session prep context.
 
 get_reviews({ userId, topicId?, since?, limit? })
 // Read-only. Review events (one per graded answer), newest first.

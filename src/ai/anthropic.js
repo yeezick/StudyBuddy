@@ -25,13 +25,27 @@ function tryParse(text) {
   return JSON.parse(stripFences(text));
 }
 
-export async function callJSON({ system, user, max_tokens = 4096 }) {
-  const first = await anthropic.messages.create({
+// Streams one reply: `onText` gets the text so far after each chunk. Resolves with the parsed
+// JSON; a reply that is not valid JSON rejects (no second attempt, unlike callJSON).
+export async function streamJSON({ system, user, max_tokens = 4096, onText }) {
+  const stream = anthropic.messages.stream({
     model: MODEL,
     max_tokens,
     system,
     messages: [{ role: 'user', content: user }],
   });
+  stream.on('text', (_delta, snapshot) => onText(snapshot));
+  return tryParse(extractText(await stream.finalMessage()));
+}
+
+// `requestOptions` go to the SDK as-is (e.g. { signal, maxRetries }) on both attempts.
+export async function callJSON({ system, user, max_tokens = 4096, requestOptions }) {
+  const first = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens,
+    system,
+    messages: [{ role: 'user', content: user }],
+  }, requestOptions);
   const firstText = extractText(first);
   try {
     return tryParse(firstText);
@@ -45,7 +59,7 @@ export async function callJSON({ system, user, max_tokens = 4096 }) {
         { role: 'assistant', content: firstText },
         { role: 'user', content: 'That was not valid JSON. Return ONLY the JSON value.' },
       ],
-    });
+    }, requestOptions);
     return tryParse(extractText(retry));
   }
 }

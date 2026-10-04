@@ -2,21 +2,10 @@ import './helpers/env.js';
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { stubRedis } from './helpers/fakeRedis.js';
+import { stubAnthropic } from './helpers/anthropicStub.js';
 
-// The Anthropic SDK captures fetch when the client is built (at import), so the stub goes in
-// before the app modules load. Each Anthropic call takes the next queued JSON reply.
-const anthropicReplies = [];
-const realFetch = globalThis.fetch;
-globalThis.fetch = async (url, init) => {
-  if (!String(url).startsWith('https://api.anthropic.com')) return realFetch(url, init);
-  if (anthropicReplies.length === 0) throw new Error('test: unexpected Anthropic call');
-  const message = {
-    id: 'msg_test', type: 'message', role: 'assistant', model: 'test-model',
-    content: [{ type: 'text', text: JSON.stringify(anthropicReplies.shift()) }],
-    stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 },
-  };
-  return new Response(JSON.stringify(message), { status: 200, headers: { 'content-type': 'application/json' } });
-};
+// Installed before the app modules load; see helpers/anthropicStub.js.
+const { replies: anthropicReplies, requests: anthropicRequests } = stubAnthropic();
 
 const { store } = await import('../src/store/index.js');
 const { startQuiz, cancelQuiz, pendingQuizReply, onQuizConfidence, onQuizAnswer, onFreeTextConfidence } =
@@ -235,17 +224,22 @@ test('T4-4: a flat SM-2 card is converted on its next answer; the event shows th
 
 test('T4: a quiz in flight from before the deploy is scheduled once and logged once', async () => {
   const { chat } = fakeClient();
-  anthropicReplies.push([mcq('c1', 'B'), mcq('c2', 'C')]);
-  const quiz = await startQuiz({ chat }, USER, SLACK_USER, CHANNEL, {}, { concepts: CONCEPTS, count: 2 });
-  // Before T4, an MCQ answer logged its event at once and was scheduled at completion.
-  const stored = await store.getQuiz(quiz.quizId);
-  Object.assign(stored.questions[0], {
-    userAnswer: 'B', answeredAt: new Date().toISOString(), isCorrect: true, pointsEarned: 1,
-    confidenceRating: 2, reviewRecorded: true,
+  // Before T4, an MCQ answer logged its event at once and was scheduled at completion. A quiz
+  // from before T5b holds every question and no `total`.
+  const now = new Date().toISOString();
+  const question = (id, conceptId, correct) => ({
+    id, ...mcq(conceptId, correct), userAnswer: null, isCorrect: null, confidenceRating: null, pointsEarned: null, shownAt: now, answeredAt: null,
   });
-  delete stored.questions[0].scheduled;
-  stored.currentQuestionIndex = 1;
-  await store.saveQuiz(stored);
+  const quiz = {
+    quizId: 'pre-t4-quiz', userId: USER, trigger: 'on_demand', input: {},
+    questions: [
+      { ...question('q1', 'c1', 'B'), userAnswer: 'B', answeredAt: now, isCorrect: true, pointsEarned: 1, confidenceRating: 2, reviewRecorded: true },
+      { ...question('q2', 'c2', 'C'), scheduled: false, reviewRecorded: false },
+    ],
+    currentQuestionIndex: 1, status: 'in_progress', score: null, slackChannelId: CHANNEL, slackUserId: SLACK_USER, createdAt: now, completedAt: null,
+  };
+  await store.saveQuiz(quiz);
+  await store.setActiveQuizId(USER, quiz.quizId);
 
   await onQuizConfidence({ ...action({ quizId: quiz.quizId, questionId: 'q2', level: 2 }), client: { chat } });
   await onQuizAnswer({ ...action({ quizId: quiz.quizId, questionId: 'q2', letter: 'C', confidenceLevel: 2 }), client: { chat } });

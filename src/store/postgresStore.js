@@ -185,10 +185,12 @@ export function createPostgresStore({ pool, ephemeral, migrateOnInit = true, pri
       );
     },
 
-    async getHistory(userId, limit) {
+    async getHistory(userId, limit, { excludeTriggers = [] } = {}) {
       const { rows } = await pool.query(
-        'SELECT entry FROM quiz_history WHERE user_id = $1 ORDER BY id DESC LIMIT $2',
-        [userId, limit],
+        `SELECT entry FROM quiz_history
+          WHERE user_id = $1 AND NOT (coalesce(entry->>'trigger', '') = ANY($3::text[]))
+          ORDER BY id DESC LIMIT $2`,
+        [userId, limit, excludeTriggers],
       );
       return rows.map((r) => r.entry);
     },

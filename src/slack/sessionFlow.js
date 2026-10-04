@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { store } from '../store/index.js';
+import { QUIZZES_ONLY } from '../lib/retest.js';
 import { boltApp } from './app.js';
 import { getConcepts } from '../lib/concepts.js';
 import { startQuiz, registerQuizCompletion } from './quizFlow.js';
@@ -109,7 +110,7 @@ async function removeAllSessionJobs(userId, session) {
 // ── Session init helpers ──────────────────────────────────────────────────────
 
 async function postSessionRecap(client, userId, channelId) {
-  const entries = await store.getHistory(userId, 3);
+  const entries = await store.getHistory(userId, 3, QUIZZES_ONLY);
   if (entries.length === 0) {
     await client.chat.postMessage({ channel: channelId, text: '_No previous quiz history yet._' });
     return [];

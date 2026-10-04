@@ -1,6 +1,7 @@
 import { getConcepts } from '../lib/concepts.js';
 import { getAllMastery } from '../lib/mastery.js';
 import { store } from '../store/index.js';
+import { QUIZZES_ONLY } from '../lib/retest.js';
 
 function daysFromNow(isoString) {
   return Math.round((new Date(isoString) - Date.now()) / 86400000);
@@ -37,7 +38,7 @@ async function getNextReview(userId) {
 export async function buildBriefSnapshot(userId) {
   const [session, history] = await Promise.all([
     store.getSession(userId),
-    store.getHistory(userId, 1),
+    store.getHistory(userId, 1, QUIZZES_ONLY),
   ]);
 
   const lastQuiz = history[0] ?? null;
