@@ -164,6 +164,8 @@ studyagent/
     │   ├── dm.js                ← getDMChannel() for unsolicited bot DMs
     │   ├── quizFlow.js          ← quiz delivery, button handling, grading
     │   ├── sessionFlow.js       ← study session orchestration
+    │   ├── retestFlow.js        ← confident-miss retest: queue at quiz end, send ~10 min later
+    │   ├── explainBack.js       ← end-of-quiz explain-back prompt, Skip, grading, event
     │   └── masteryFlow.js       ← /mastery and weekly digest formatting
     ├── mcp/
     │   └── server.js            ← MCP server exposing Cowork tools
@@ -173,6 +175,7 @@ studyagent/
         ├── env.js               ← dotenv loader with override:true (local dev sandbox)
         ├── fsrs.js              ← FSRS (ts-fsrs) wrapper + SM-2 → FSRS conversion, pure
         ├── grade.js             ← gradeFor(q): the one 1–4 grade (DEC-053)
+        ├── retest.js            ← confident-miss rule, daily cap, retest question type (DEC-058)
         ├── sm2.js               ← SM-2 algorithm (rollback scheduler), pure functions, no Redis
         ├── mastery.js           ← mastery Redis CRUD (getMastery, setMastery, applyQuestionResult)
         └── concepts.js          ← concept CRUD against Redis
@@ -384,6 +387,33 @@ Register all of these as slash commands in the Slack app manifest.
 
   Full results: [link — will 404 until Phase 3 web UI is live]
   ```
+
+**Confident-miss retest (DEC-058 §1):**
+- A wrong answer with confidence High (Sure) reserves a retest slot for that quiz × concept
+  (`store.claimRetest`, Redis key `retests:{userId}:{YYYY-MM-DD}`, local day, 2-day TTL). Cap 3
+  per user per day; overflow is dropped and logged once. The answer's feedback gets one line.
+- When the quiz ends (completed or cancelled) a BullMQ `retest` job is added ~10 min out, job id
+  `retest__{quizId}__{conceptId}` (a second add is a no-op). If another quiz is in progress when
+  it fires, it waits 10 min, up to 3 times, then is dropped.
+- The retest is a one-question quiz, trigger `retest`: MCQ while the card is New/Learning, free
+  text once it has graduated (Review/Relearning). Logged and FSRS-scheduled like any answer;
+  it never queues another retest and gets no explain-back.
+
+**Explain-back (DEC-058 §2):**
+- On completion (not cancel, not a session warm-up, not a retest): one optional prompt on the
+  weakest answered concept (lowest grade; tie → longest latency, idle ignored; then first asked),
+  with a Skip button. The next DM in that channel is the answer (routing: quiz answer >
+  explain-back > session prompt > break detection). The prompt lapses after 30 min or when a new
+  quiz starts.
+- The reply is graded by the free-text grader (expected answer = concept summary) and logged as
+  a review event `item_type = explain_back`: `correct` = verdict, `score`, `grade` null,
+  `prev_state` null, `next_state = { scheduled: false, prompt, explanation, feedback, idle_latency }`.
+  The card is not rescheduled. Read them back with MCP `get_reviews`.
+
+**Weekly digest calibration (DEC-058 §3):** one line from the last 7 days of review events
+(explain-backs and answers without a confidence tap excluded): `Calibration (7 days): Guess x%
+right (n) · Medium y% (n) · Sure z% (n)`. Levels with n = 0 are omitted; the line is omitted when
+total n < 5.
 
 **Constraints:**
 - Max 10 questions per Slack quiz

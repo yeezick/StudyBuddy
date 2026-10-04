@@ -19,7 +19,10 @@ const keys = {
   settings: (userId) => `settings:${userId}`,
   snapshot: (userId, day) => `mastery-snapshot:${userId}:${day}`,
   reviewEvents: (userId) => `review-events:${userId}`,
+  retests: (userId, day) => `retests:${userId}:${day}`,
 };
+
+const RETEST_KEY_TTL_S = 2 * 24 * 60 * 60;
 
 // Today's Redis layout behind the store interface (see store/index.js). Key names are
 // unchanged so existing production data keeps working.
@@ -98,6 +101,17 @@ export function createRedisStore({ redis, primaryUserId = null }) {
     getMasterySnapshot: async (userId, day) => parse(await redis.get(keys.snapshot(userId, day))),
     saveMasterySnapshot: async (userId, day, record) => {
       await redis.set(keys.snapshot(userId, day), JSON.stringify(record));
+    },
+
+    // Retest slots for one user-day, as a JSON list of `${quizId}:${conceptId}` (DEC-058 §1).
+    // Read-modify-write: one bot instance and one user, so no concurrent claimers.
+    async claimRetest(userId, day, key, cap) {
+      const k = keys.retests(userId, day);
+      const claimed = parse(await redis.get(k)) ?? [];
+      if (claimed.includes(key)) return 'duplicate';
+      if (claimed.length >= cap) return 'over_cap';
+      await redis.set(k, JSON.stringify([...claimed, key]), { ex: RETEST_KEY_TTL_S });
+      return 'claimed';
     },
 
     // Append-only: events are only ever LPUSHed, never trimmed or rewritten.

@@ -31,6 +31,15 @@ test('break detection still fires when nothing is waiting for a reply', () => {
   assert.equal(routeMessage(msg('ok thanks'), pending(false, false)), 'ignore');
 });
 
+test('T5-2: a pending explain-back takes the message before a session prompt and break detection', () => {
+  const routes = (quiz, explain, session) => ({ hasQuizReply: () => quiz, hasExplainReply: () => explain, hasSessionReply: () => session });
+  for (const text of ANSWERS) {
+    assert.equal(routeMessage(msg(text), routes(false, true, true)), 'explain');
+    assert.equal(routeMessage(msg(text), routes(false, true, false)), 'explain');
+  }
+  assert.equal(routeMessage(msg('my answer'), routes(true, true, false)), 'quiz', 'a quiz answer still wins');
+});
+
 test('message subtypes are ignored', () => {
   assert.equal(routeMessage(msg('pause', { subtype: 'message_changed' }), pending(true, true)), 'ignore');
 });

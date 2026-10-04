@@ -44,6 +44,28 @@ export function buildReviewEvent(quiz, q, transition = null) {
   };
 }
 
+// An explain-back (DEC-058 §2) is logged but never scheduled: it is the card's second review
+// the same day. prev_state is null and next_state carries `scheduled: false` plus the
+// explanation itself, so the log keeps every explanation per concept.
+export function buildExplainBackEvent({ userId, quizId, trigger, conceptId, prompt, text, shownAt, answeredAt, result }) {
+  const latency = latencyMs({ shownAt, answeredAt });
+  return {
+    userId,
+    conceptId,
+    ts: answeredAt,
+    trigger,
+    quizId,
+    itemType: 'explain_back',
+    correct: result.isCorrect,
+    score: result.score,
+    confidence: null,
+    latencyMs: latency,
+    grade: null,
+    prevState: null,
+    nextState: { scheduled: false, prompt, explanation: text, feedback: result.feedback, idle_latency: isIdleLatency(latency) },
+  };
+}
+
 // Schedules the answer's card, then writes its event; both are marked on the question so
 // neither happens twice. A scheduling error propagates (the handler reports it and the
 // answer can be retried). An event store error is logged once and swallowed: losing an

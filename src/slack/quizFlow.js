@@ -6,6 +6,8 @@ import { generateQuestions } from '../ai/questionGen.js';
 import { gradeMCQ, gradeFreeText } from '../ai/grading.js';
 import { matchConceptsToPrompt } from '../ai/conceptMatch.js';
 import { reviewAnswer } from '../lib/reviewEvents.js';
+import { isConfidentMiss, claimRetest, RETEST_TRIGGER } from '../lib/retest.js';
+import { startExplainBack, clearExplainBack } from './explainBack.js';
 
 const ON_DEMAND_DISTRIBUTION = { mcq: 0.6, short_answer: 0.2, explain: 0.2 };
 const MAX_QUESTIONS = 10;
@@ -19,6 +21,9 @@ const pendingFreeTextConfidence = new Map();
 // Callbacks invoked when a quiz completes: quizId → async fn(quiz)
 const quizCompletionCallbacks = new Map();
 
+// Listeners called once when any quiz ends: async fn(quiz, { reason: 'completed' | 'cancelled' })
+const quizEndListeners = [];
+
 // The handler waiting for this user's free-text answer in this channel, if any (consumed by messageRouter).
 export function pendingQuizReply(slackUserId, channelId) {
   return pendingReplies.get(`${slackUserId}:${channelId}`) ?? null;
@@ -27,6 +32,34 @@ export function pendingQuizReply(slackUserId, channelId) {
 export function registerQuizCompletion(quizId, cb) {
   quizCompletionCallbacks.set(quizId, cb);
 }
+
+export function onQuizEnd(listener) {
+  quizEndListeners.push(listener);
+}
+
+// A listener's failure is logged and never stops the quiz from finishing.
+async function notifyQuizEnd(quiz, reason) {
+  for (const listener of quizEndListeners) {
+    try {
+      await listener(quiz, { reason });
+    } catch (err) {
+      console.error(`[quiz] end listener failed | quizId=${quiz.quizId} | ${err.message}`);
+    }
+  }
+}
+
+// One extra feedback line for a confident miss (DEC-058 §1).
+function confidentMissNote(q) {
+  if (!isConfidentMiss(q) || q.retestQueued === undefined) return null;
+  return q.retestQueued
+    ? "\u26a0\ufe0f You were sure \u2014 worth a second look; I'll re-check this ~10 min after the quiz."
+    : '\u26a0\ufe0f You were sure \u2014 worth a second look.';
+}
+
+const noteBlock = (q) => {
+  const note = confidentMissNote(q);
+  return note ? [{ type: 'section', text: { type: 'mrkdwn', text: note } }] : [];
+};
 
 const loadQuiz = (quizId) => store.getQuiz(quizId);
 const saveQuiz = (quiz) => store.saveQuiz(quiz);
@@ -114,6 +147,7 @@ function resultBlocks(question, questionNum, total, gradeResult, confidenceLevel
       type: 'section',
       text: { type: 'mrkdwn', text: `_${gradeResult.feedback}_` },
     },
+    ...noteBlock(question),
   ];
 }
 
@@ -139,7 +173,7 @@ function freetextConfidenceBlocks(quizId, question, questionNum, total) {
   ];
 }
 
-function freetextResultBlocks(questionNum, total, gradeResult, confidenceLevel) {
+function freetextResultBlocks(question, gradeResult, confidenceLevel) {
   const confLabel = ['Low', 'Medium', 'High'][confidenceLevel - 1];
   const status = gradeResult.isCorrect ? '\u2705 Correct' : '\u274c Incorrect';
   return [
@@ -151,7 +185,15 @@ function freetextResultBlocks(questionNum, total, gradeResult, confidenceLevel) 
       type: 'section',
       text: { type: 'mrkdwn', text: `_${gradeResult.feedback}_` },
     },
+    ...noteBlock(question),
   ];
+}
+
+// A wrong Sure answer reserves a retest, queued when the quiz ends (DEC-058 §1). A retest
+// quiz never queues another one.
+async function flagConfidentMiss(quiz, q) {
+  if (quiz.trigger === RETEST_TRIGGER || !isConfidentMiss(q)) return;
+  q.retestQueued = await claimRetest(quiz, q);
 }
 
 // Saves the quiz with the question's shownAt first, so answer latency survives a restart.
@@ -242,10 +284,17 @@ async function completeQuiz(client, quiz) {
   const strongestName = strongestId ? (conceptMap[strongestId]?.name ?? strongestId) : null;
   const weakestName = weakestId ? (conceptMap[weakestId]?.name ?? weakestId) : null;
 
-  let text = `\u2705 Quiz complete \u2014 ${quiz.score}/100  (${correct}/${total} correct)`;
-  if (strongestName) text += `\n\nStrongest: ${strongestName}`;
-  if (weakestName) text += `\nNeeds work: ${weakestName}`;
-  text += `\n\n_Full results: will be available in Phase 3 web UI_`;
+  let text;
+  if (quiz.trigger === RETEST_TRIGGER) {
+    text = correct === total
+      ? '\u2705 Re-check done \u2014 that one stuck this time.'
+      : "\u{1F501} Re-check done \u2014 it'll come back sooner in your reviews.";
+  } else {
+    text = `\u2705 Quiz complete \u2014 ${quiz.score}/100  (${correct}/${total} correct)`;
+    if (strongestName) text += `\n\nStrongest: ${strongestName}`;
+    if (weakestName) text += `\nNeeds work: ${weakestName}`;
+    text += `\n\n_Full results: will be available in Phase 3 web UI_`;
+  }
 
   await client.chat.postMessage({ channel: quiz.slackChannelId, text });
 
@@ -253,6 +302,13 @@ async function completeQuiz(client, quiz) {
   if (cb) {
     quizCompletionCallbacks.delete(quiz.quizId);
     await cb(quiz);
+  } else if (quiz.trigger !== RETEST_TRIGGER) {
+    // A session warm-up (it has a callback) carries on with the session instead.
+    try {
+      await startExplainBack(client, quiz);
+    } catch (err) {
+      console.error(`[explain-back] prompt failed | quizId=${quiz.quizId} | ${err.message}`);
+    }
   }
 
   const historyEntry = {
@@ -265,6 +321,7 @@ async function completeQuiz(client, quiz) {
   };
   await store.addHistory(userId, historyEntry);
   await store.clearActiveQuizId(userId);
+  await notifyQuizEnd(quiz, 'completed');
 }
 
 async function selectConcepts(userId, input) {
@@ -303,6 +360,7 @@ export async function cancelQuiz(userId) {
 
   await store.deleteQuiz(quizId);
   await store.clearActiveQuizId(userId);
+  await notifyQuizEnd(quiz, 'cancelled');
   return true;
 }
 
@@ -368,6 +426,7 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
 
   await saveQuiz(quiz);
   await store.setActiveQuizId(userId, quizId);
+  clearExplainBack(slackUserId, channelId);
   await postQuestion(client, quiz, 0);
   return quiz;
 }
@@ -426,6 +485,7 @@ export async function onQuizAnswer({ ack, body, client }) {
     q.isCorrect = gradeResult.isCorrect;
     q.pointsEarned = gradeResult.score;
     await reviewAnswer(quiz, q);
+    await flagConfidentMiss(quiz, q);
 
     await client.chat.update({
       channel: body.channel.id,
@@ -466,13 +526,14 @@ export async function onFreeTextConfidence({ ack, body, client }) {
     const q = quiz.questions[index];
     q.confidenceRating = level;
     await reviewAnswer(quiz, q);
+    await flagConfidentMiss(quiz, q);
 
     await saveQuiz(quiz);
 
     await client.chat.update({
       channel: body.channel.id,
       ts: body.message.ts,
-      blocks: freetextResultBlocks(index + 1, quiz.questions.length, gradeResult, level),
+      blocks: freetextResultBlocks(q, gradeResult, level),
       text: gradeResult.isCorrect ? '\u2705 Correct' : '\u274c Incorrect',
     });
 

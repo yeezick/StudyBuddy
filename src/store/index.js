@@ -16,6 +16,7 @@ import { ownerConfig } from '../lib/config.js';
 //   getCards(userId, conceptIds) → (card | null)[]      saveCard(userId, card)
 //   getQuiz(quizId), saveQuiz(quiz), deleteQuiz(quizId)
 //   getActiveQuizId(userId), setActiveQuizId(userId, quizId), clearActiveQuizId(userId)
+//   claimRetest(userId, day, key, cap) → 'claimed' | 'duplicate' | 'over_cap'
 //   addHistory(userId, entry), getHistory(userId, limit) → newest first
 //   getSession(userId) → latest saved session | null    saveSession(userId, session)
 //   getSettings(userId) → object | null                 saveSettings(userId, settings)
@@ -24,7 +25,7 @@ import { ownerConfig } from '../lib/config.js';
 //   getReviewEvents(userId, { topicId, since, limit }) → newest first
 //
 // STORE_BACKEND: `redis` (default, today's keys) or `postgres` (needs DATABASE_URL or PG* vars).
-// Quizzes stay in Redis under both backends (short-lived state, DEC-047).
+// Quizzes and retest slots stay in Redis under both backends (short-lived state, DEC-047).
 export function createStoreFromEnv(env = process.env, { redisClient = redis } = {}) {
   const backend = env.STORE_BACKEND || 'redis';
   const redisStore = createRedisStore({ redis: redisClient, primaryUserId: ownerConfig(env).userId });

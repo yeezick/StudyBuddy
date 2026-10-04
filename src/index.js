@@ -19,6 +19,8 @@ import {
   registerSessionHandlers,
 } from './slack/sessionFlow.js';
 import { registerMessageRouter } from './slack/messageRouter.js';
+import { registerExplainBackHandlers } from './slack/explainBack.js';
+import { registerRetestFlow, handleRetestJob } from './slack/retestFlow.js';
 import { startScheduler } from './scheduler/jobs.js';
 import { mountMcp } from './mcp/server.js';
 
@@ -52,6 +54,8 @@ mountMcp(app, requireBearer());
 registerCommands();
 registerQuizHandlers();
 registerSessionHandlers();
+registerExplainBackHandlers();
+registerRetestFlow();
 registerMessageRouter();
 
 // Slack and BullMQ connect after the port is bound, so /health answers even if they are slow or down.
@@ -70,6 +74,7 @@ async function startServices() {
       sessionEnd:  (job) => handleSessionEnd(boltApp.client, job.data.userId, job.data.sessionId),
       breakEnd:    (job) => handleBreakEnd(boltApp.client, job.data.userId, job.data.sessionId, job.data.segmentIndex),
       wrapMorning: (job) => handleSessionWrapMorning(boltApp.client, job.data.userId, job.data.sessionId),
+      retest:      (job) => handleRetestJob(boltApp.client, job.data),
     }))),
   ]);
   console.log(`[boot] background start finished | ${JSON.stringify(depSnapshot())}`);

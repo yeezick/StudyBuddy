@@ -203,6 +203,31 @@ export function storeContract(name, makeStore) {
     assert.deepEqual(read.nextState, nextState);
   });
 
+  t('review events: an explain-back round-trips with no grade and an unscheduled marker (DEC-058)', async () => {
+    const nextState = { scheduled: false, prompt: 'why?', explanation: 'because it is', feedback: 'ok', idle_latency: false };
+    await store.appendReviewEvent({
+      userId: 'u1', conceptId: 'c1', trigger: 'on_demand', quizId: 'q-1', itemType: 'explain_back',
+      correct: true, score: 0.75, confidence: null, latencyMs: 9000, grade: null, prevState: null, nextState,
+      ts: '2026-10-04T12:00:00.000Z',
+    });
+    const [read] = await store.getReviewEvents('u1');
+    assert.equal(read.itemType, 'explain_back');
+    assert.equal(read.score, 0.75);
+    assert.equal(read.grade ?? null, null);
+    assert.equal(read.prevState ?? null, null);
+    assert.deepEqual(read.nextState, nextState);
+  });
+
+  t('retest slots: claimed once per key, capped per user-day (DEC-058)', async () => {
+    assert.equal(await store.claimRetest('u1', '2026-10-03', 'quiz-1:c1', 2), 'claimed');
+    assert.equal(await store.claimRetest('u1', '2026-10-03', 'quiz-1:c1', 2), 'duplicate');
+    assert.equal(await store.claimRetest('u1', '2026-10-03', 'quiz-1:c2', 2), 'claimed');
+    assert.equal(await store.claimRetest('u1', '2026-10-03', 'quiz-2:c1', 2), 'over_cap');
+    assert.equal(await store.claimRetest('u1', '2026-10-03', 'quiz-1:c2', 2), 'duplicate', 'a claimed key stays claimed at the cap');
+    assert.equal(await store.claimRetest('u1', '2026-10-04', 'quiz-2:c1', 2), 'claimed', 'a new day');
+    assert.equal(await store.claimRetest('u2', '2026-10-03', 'quiz-3:c1', 2), 'claimed', 'per user');
+  });
+
   t('review events: filter by topic and since, then limit', async () => {
     const at = (h) => `2026-10-03T${String(h).padStart(2, '0')}:00:00.000Z`;
     const base = { userId: 'u1', itemType: 'mcq', correct: true, grade: 3 };
