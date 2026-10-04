@@ -21,6 +21,7 @@ import { ownerConfig } from '../lib/config.js';
 //   getSession(userId) → latest saved session | null    saveSession(userId, session)
 //   getSettings(userId) → object | null                 saveSettings(userId, settings)
 //   getMasterySnapshot(userId, day), saveMasterySnapshot(userId, day, record)
+//   getTopic(topicId) → topic spec | null    saveTopic(spec) (upsert, owner-checked)    listTopics(userId)
 //   appendReviewEvent(event) → event with topicId and ts filled in (append-only)
 //   getReviewEvents(userId, { topicId, since, limit }) → newest first
 //

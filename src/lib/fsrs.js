@@ -2,11 +2,24 @@ import { fsrs, generatorParameters, createEmptyCard, default_w, S_MIN, State } f
 
 // FSRS-6 with default parameters (no per-user optimizer yet), 90% target retention,
 // fuzz and short-term learning steps on (T4-1).
-export const scheduler = fsrs(generatorParameters({
-  request_retention: 0.9,
+export const DEFAULT_RETENTION = 0.9;
+
+const schedulerWith = (requestRetention) => fsrs(generatorParameters({
+  request_retention: requestRetention,
   enable_fuzz: true,
   enable_short_term: true,
 }));
+
+export const scheduler = schedulerWith(DEFAULT_RETENTION);
+
+// A topic's template may set another desired retention (DEC-049); only intervals change with
+// it, never the memory model. The default retention always gets the scheduler above.
+const byRetention = new Map([[DEFAULT_RETENTION, scheduler]]);
+export function schedulerFor(retention = DEFAULT_RETENTION) {
+  if (!(retention > 0 && retention < 1)) return scheduler;
+  if (!byRetention.has(retention)) byRetention.set(retention, schedulerWith(retention));
+  return byRetention.get(retention);
+}
 
 // The FSRS fields a card stores at the top level of `cards.state`.
 const FIELDS = ['due', 'stability', 'difficulty', 'elapsed_days', 'scheduled_days', 'learning_steps', 'reps', 'lapses', 'state', 'last_review'];
@@ -73,9 +86,9 @@ export function retrievabilityAt(card, now = new Date()) {
 }
 
 // One FSRS review. Retrievability is the recall probability at answer time (null for a new card).
-export function reviewFsrs(card, grade, now) {
+export function reviewFsrs(card, grade, now, retention = DEFAULT_RETENTION) {
   const before = toFsrsCard(card);
   const retrievability = retrievabilityAt(card, now);
-  const { card: after } = scheduler.next(before, now, grade);
+  const { card: after } = schedulerFor(retention).next(before, now, grade);
   return { fields: fromFsrsCard(after), retrievability };
 }

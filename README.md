@@ -247,6 +247,12 @@ node scripts/load-concepts.js --dry-run   # prints the plan, writes nothing; dro
 
 Mastery is stored per concept id, so it survives an update. Re-running is safe.
 
+### Topics, professors and templates
+
+Each topic has a professor spec: name, goal, target date, template, professor name/tone/level, sources and minutes per session (stored on the `topics` row; see `src/lib/topicSpec.js`). The template sets the teaching policy: hint-first, retrieval-check cadence, new concepts per session, question mix, answer-key rule, FSRS retention target and daily-queue weight. There are four templates in `src/lib/templates.js`: **Knowledge**, **Hands-on/sensory**, **Certification exam** and **Knowledge + project**.
+
+Question writing, answer keys, grading and explain-back all send the same per-topic professor prefix first, marked for prompt caching (`src/ai/professor.js`). Every professor answers from the topic's sources and answer key and marks unsupported claims "unverified". Quizzes run on topic `ai-pm` unless a `topicId` is given. A topic with no stored professor uses the built-in ai-pm spec, so an existing deployment behaves as before.
+
 ---
 
 ## Roadmap

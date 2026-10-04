@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { withSystemNote } from './professor.js';
 
 export const DEFAULT_MODEL = 'claude-sonnet-4-6';
 export const MODEL = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
@@ -38,6 +39,7 @@ export async function streamJSON({ system, user, max_tokens = 4096, onText }) {
   return tryParse(extractText(await stream.finalMessage()));
 }
 
+// `system`: a string, or text blocks (a cached professor prefix first, see ai/professor.js).
 // `requestOptions` go to the SDK as-is (e.g. { signal, maxRetries }) on both attempts.
 export async function callJSON({ system, user, max_tokens = 4096, requestOptions }) {
   const first = await anthropic.messages.create({
@@ -53,7 +55,7 @@ export async function callJSON({ system, user, max_tokens = 4096, requestOptions
     const retry = await anthropic.messages.create({
       model: MODEL,
       max_tokens,
-      system: `${system}\n\nCRITICAL: Return ONLY valid JSON. No preamble, no markdown fences, no commentary.`,
+      system: withSystemNote(system, 'CRITICAL: Return ONLY valid JSON. No preamble, no markdown fences, no commentary.'),
       messages: [
         { role: 'user', content: user },
         { role: 'assistant', content: firstText },

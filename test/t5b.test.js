@@ -140,7 +140,7 @@ test('T5b-1: Q1, Q2 and the rest are written at once on separate concepts; Q1 po
   assert.equal(lead2.length, 1);
   assert.deepEqual([...lead1, ...lead2, ...others].sort(), ['c1', 'c2', 'c3'], 'each concept offered to exactly one call');
   assert.match(r1, /^Generate 1 questions\.\nType distribution: 100% mcq/);
-  assert.match(r2, /^Generate 1 questions\.\nType distribution: 100% mcq/);
+  assert.match(r2, /^Generate 1 questions\.\nType distribution: 100% (mcq|short_answer|explain)\n/, 'Q2 type drawn from the mix (DEC-060 §2)');
   assert.match(r3, /^Generate 1 questions\.\nType distribution: 60% mcq, 20% short_answer, 20% explain/);
 
   assert.equal(posted.length, 1);
@@ -261,7 +261,7 @@ test('T5b-1: a stream that breaks after Q1 was shown gets its answer key from a 
   assert.match(blockText(updated.at(-1)), /✅ Correct/);
   assert.match(blockText(updated.at(-1)), /rewritten key/);
   const keyCall = anthropicRequests.at(-1);
-  assert.match(keyCall.system, /Write the answer key/);
+  assert.match(keyCall.system.map((b) => b.text).join('\n'), /Write the answer key/);
   assert.match(keyCall.messages[0].content, /Question \(mcq\): About c\d\?\nOptions:\nA\. a\nB\. b/);
   assert.ok(warnings.some((w) => w.includes('[questionGen] streamed question failed, recovering | shown=true')));
 });

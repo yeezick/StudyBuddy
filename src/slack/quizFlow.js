@@ -9,8 +9,12 @@ import { reviewAnswer } from '../lib/reviewEvents.js';
 import { CONFIDENCE_LABELS } from '../lib/grade.js';
 import { isConfidentMiss, claimRetest, RETEST_TRIGGER } from '../lib/retest.js';
 import { startExplainBack, clearExplainBack } from './explainBack.js';
+import { getAllMastery, isDue, masteryScore } from '../lib/mastery.js';
+import { getTopicSpec, normalizeSpec } from '../lib/topicSpec.js';
+import { templateFor } from '../lib/templates.js';
+import { DEFAULT_TOPIC_ID } from '../store/topics.js';
 
-const ON_DEMAND_DISTRIBUTION = { mcq: 0.6, short_answer: 0.2, explain: 0.2 };
+// On-demand quizzes use the topic template's item mix; ai-pm's Knowledge template has today's.
 const MAX_QUESTIONS = 10;
 
 // Scoped pending free-text reply handlers: `${slackUserId}:${channelId}` → async fn(text)
@@ -74,6 +78,9 @@ const noteBlock = (q) => {
 };
 
 const loadQuiz = (quizId) => store.getQuiz(quizId);
+
+// A quiz started before topics (T6-1) has no spec; it ran as ai-pm.
+const specOf = (quiz) => quiz.spec ?? normalizeSpec({ id: quiz.topicId ?? DEFAULT_TOPIC_ID });
 const saveQuiz = (quiz) => store.saveQuiz(quiz);
 
 const OPTION_EMOJI = ['\u{1F1E6}', '\u{1F1E7}', '\u{1F1E8}', '\u{1F1E9}'];
@@ -241,7 +248,7 @@ async function postQuestion(client, quiz, index) {
 
     const freshQ = freshQuiz.questions[index];
     await ensureAnswerKey(freshQuiz, freshQ);
-    const gradeResult = await gradeFreeText(freshQ, messageText);
+    const gradeResult = await gradeFreeText(freshQ, messageText, { spec: specOf(freshQuiz) });
 
     freshQ.userAnswer = messageText;
     freshQ.answeredAt = answeredAt;
@@ -416,14 +423,28 @@ async function fillQuestions(client, quiz, nextIndex) {
   }
 }
 
-// Concepts for the questions written alone, picked at random so the batch written alongside
-// them can leave them out. Only when every question can have its own concept.
-function pickLeads(concepts, count, n = 2, random = Math.random) {
+// Concepts for the questions written alone, so the batch written alongside them can leave
+// them out. Only when every question can have its own concept. DEC-060 §1: due cards first,
+// then the weakest (lowest mastery); random only breaks ties. `cards[i]` is concepts[i]'s card.
+export function pickLeads(concepts, count, { cards = [], now = new Date(), n = 2, random = Math.random } = {}) {
   if (count < 2 || concepts.length < count) return [];
-  const pool = [...concepts];
-  const leads = [];
-  while (leads.length < Math.min(n, count)) leads.push(pool.splice(Math.floor(random() * pool.length), 1)[0]);
-  return leads;
+  const ranked = concepts.map((c, i) => ({
+    c, due: isDue(cards[i], now) ? 0 : 1, mastery: masteryScore(cards[i], now), tie: random(),
+  }));
+  ranked.sort((a, b) => a.due - b.due || a.mastery - b.mastery || a.tie - b.tie);
+  return ranked.slice(0, Math.min(n, count)).map((r) => r.c);
+}
+
+// One item type drawn from the distribution (DEC-060 §2: Q2 follows the normal mix).
+export function sampleType(distribution, random = Math.random) {
+  const entries = Object.entries(distribution);
+  const total = entries.reduce((sum, [, share]) => sum + share, 0);
+  let x = random() * total;
+  for (const [type, share] of entries) {
+    x -= share;
+    if (x < 0) return type;
+  }
+  return entries.at(-1)[0];
 }
 
 async function selectConcepts(userId, input) {
@@ -475,8 +496,11 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
     distribution: distributionOverride = null,
     count: countOverride = null,
     requestedAt = Date.now(), // when the user asked (command received), for quiz_ready_ms
+    topicId = DEFAULT_TOPIC_ID,
   } = options;
 
+  // Concepts still come from the user's library; the topic sets the professor (T6-1).
+  const spec = await getTopicSpec(store, topicId);
   const concepts = conceptsOverride ?? await selectConcepts(userId, input);
   if (concepts.length === 0) {
     await client.chat.postMessage({
@@ -487,14 +511,17 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
   }
 
   const count = countOverride ?? Math.min(MAX_QUESTIONS, concepts.length);
-  const distribution = distributionOverride ?? ON_DEMAND_DISTRIBUTION;
+  const distribution = distributionOverride ?? templateFor(spec.template).itemMix;
   const freeFormPrompt = input.freeFormPrompt ?? null;
-  const solo = { count: 1, distribution: { [leadType(distribution)]: 1 }, freeFormPrompt };
+  // Q1 is the mix's largest share (fast to answer, DEC-059 §4); Q2 is drawn from the mix.
+  const solo = { count: 1, distribution: { [leadType(distribution)]: 1 }, freeFormPrompt, spec };
+  const second = { ...solo, distribution: { [sampleType(distribution)]: 1 } };
 
   // Q1 posts in seconds (DEC-059 §4): Q1 and Q2 are each written alone, on concepts picked
   // here, while the rest are written at the same time from the other concepts. When the
   // concepts are too few to keep apart, Q1 is written first and the rest are told what it asked.
-  const leads = pickLeads(concepts, count);
+  const cards = count >= 2 && concepts.length >= count ? await getAllMastery(userId, concepts.map((c) => c.id)) : [];
+  const leads = pickLeads(concepts, count, { cards });
   const quizId = crypto.randomUUID();
   const batches = [];
   const firstConcepts = leads.length ? [leads[0]] : concepts;
@@ -502,8 +529,8 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
   const firstCall = streamQuestion({ ...solo, concepts: firstConcepts });
   if (leads.length) {
     const others = concepts.filter((c) => !leads.includes(c));
-    if (leads[1]) batches.push(startBatch({ ...solo, concepts: [leads[1]] }));
-    if (count > leads.length) batches.push(startBatch({ concepts: others, count: count - leads.length, distribution, freeFormPrompt }));
+    if (leads[1]) batches.push(startBatch({ ...second, concepts: [leads[1]] }));
+    if (count > leads.length) batches.push(startBatch({ concepts: others, count: count - leads.length, distribution, freeFormPrompt, spec }));
   }
   if (batches.length) pendingQuestions.set(quizId, batches);
 
@@ -519,7 +546,7 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
     pendingAnswerKeys.set(quizId, firstCall.full);
   }
   if (!leads.length && count > 1) {
-    pendingQuestions.set(quizId, [startBatch({ concepts, count: count - 1, distribution, freeFormPrompt, asked: [first] })]);
+    pendingQuestions.set(quizId, [startBatch({ concepts, count: count - 1, distribution, freeFormPrompt, asked: [first], spec })]);
   }
 
   const quiz = {
@@ -527,6 +554,9 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
     userId,
     trigger,
     input,
+    topicId: spec.id,
+    spec,
+    retentionTarget: templateFor(spec.template).retentionTarget,
     questions: [toQuizQuestion(first, 0)],
     total: count,
     currentQuestionIndex: 0,

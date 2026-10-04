@@ -9,6 +9,7 @@ import { createRedisStore } from '../src/store/redisStore.js';
 import { createPostgresStore, libraryTopicId, DEFAULT_TOPIC_ID } from '../src/store/postgresStore.js';
 import { migrate } from '../src/store/migrate.js';
 import { testDbEnabled, assertLocalTestDb } from './helpers/testDb.js';
+import { getTopicSpec, AI_PM_SPEC } from '../src/lib/topicSpec.js';
 
 // A throwaway local Postgres (CI uses a service container), set by the PG* variables; see
 // helpers/testDb.js. Every run works in its own schema and drops it afterwards.
@@ -101,5 +102,22 @@ if (!testDbEnabled()) {
     assert.equal(await store.seedConcepts('u1', [good]), true);
     await store.saveCard('u1', { conceptId: 'c1', nextReviewAt: null }); // user row exists after the retry
     assert.deepEqual(await store.getConcepts('u1'), [good]);
+  });
+
+  test('[postgres] T6-1: today\'s ai-pm row (no professor) reads as the built-in ai-pm spec; a saved spec keeps the concepts', async () => {
+    await pool.query(`TRUNCATE ${TABLES.join(', ')} RESTART IDENTITY CASCADE`);
+    const store = createPostgresStore({ pool, ephemeral: createRedisStore({ redis }), migrateOnInit: false, primaryUserId: 'owner' });
+    await store.seedConcepts('owner', [{ id: 'm1-c01', name: 'n', summary: 's' }]);
+    const row = await store.getTopic(DEFAULT_TOPIC_ID);
+    assert.equal(row.name, 'Library');
+    assert.equal(row.professor, null);
+    assert.equal(row.template, null);
+    const spec = await getTopicSpec(store, DEFAULT_TOPIC_ID);
+    assert.deepEqual({ ...spec, ownerUserId: null }, { ...AI_PM_SPEC, professor: { ...AI_PM_SPEC.professor }, sources: [...AI_PM_SPEC.sources], ownerUserId: null });
+    assert.equal(spec.ownerUserId, 'owner');
+
+    await store.saveTopic({ ...spec, professor: { ...spec.professor, name: 'Dr. PM' } });
+    assert.equal((await getTopicSpec(store, DEFAULT_TOPIC_ID)).professor.name, 'Dr. PM');
+    assert.equal((await store.getConcepts('owner')).length, 1, 'saving the spec leaves the library intact');
   });
 }

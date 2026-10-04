@@ -20,6 +20,8 @@ const keys = {
   snapshot: (userId, day) => `mastery-snapshot:${userId}:${day}`,
   reviewEvents: (userId) => `review-events:${userId}`,
   retests: (userId, day) => `retests:${userId}:${day}`,
+  topic: (topicId) => `topic:${topicId}`,
+  topicIds: (userId) => `topic-ids:${userId}`,
 };
 
 const RETEST_KEY_TTL_S = 2 * 24 * 60 * 60;
@@ -92,6 +94,25 @@ export function createRedisStore({ redis, primaryUserId = null }) {
       if (excludeTriggers.length === 0) return (await redis.lrange(keys.history(userId), 0, limit - 1)).map(parse);
       const all = (await redis.lrange(keys.history(userId), 0, -1)).map(parse);
       return all.filter((e) => !excludeTriggers.includes(e.trigger)).slice(0, limit);
+    },
+
+    // Topic specs (lib/topicSpec.js), one JSON value per topic plus each owner's id list.
+    getTopic: async (topicId) => parse(await redis.get(keys.topic(topicId))),
+
+    async saveTopic(topic) {
+      if (!topic.ownerUserId) throw new Error('saveTopic: ownerUserId is required');
+      const prev = parse(await redis.get(keys.topic(topic.id)));
+      if (prev && prev.ownerUserId !== topic.ownerUserId) throw new Error(`saveTopic: topic ${topic.id} belongs to another user`);
+      await redis.set(keys.topic(topic.id), JSON.stringify(topic));
+      const ids = parse(await redis.get(keys.topicIds(topic.ownerUserId))) ?? [];
+      if (!ids.includes(topic.id)) await redis.set(keys.topicIds(topic.ownerUserId), JSON.stringify([...ids, topic.id]));
+      return topic;
+    },
+
+    async listTopics(userId) {
+      const ids = parse(await redis.get(keys.topicIds(userId))) ?? [];
+      if (!ids.length) return [];
+      return (await redis.mget(...ids.map(keys.topic))).map(parse).filter(Boolean);
     },
 
     getSession: async (userId) => parse(await redis.get(keys.session(userId))),

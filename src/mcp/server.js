@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { store } from '../store/index.js';
 import { QUIZZES_ONLY } from '../lib/retest.js';
 import { getConcepts } from '../lib/concepts.js';
-import { getAllMastery } from '../lib/mastery.js';
+import { getAllMastery, masteryScore, normalizeCard } from '../lib/mastery.js';
+import { retrievabilityAt } from '../lib/fsrs.js';
 import { isKnownUser } from '../lib/resolveUser.js';
 import { conceptShape, conceptUpdatesShape } from './conceptOps.js';
 
@@ -57,7 +58,7 @@ export function createMcpServer() {
   // get_mastery
   mcp.tool(
     'get_mastery',
-    'Returns mastery state for all concepts, optionally filtered by module.',
+    'Returns mastery state for all concepts, optionally filtered by module: the stored card (FSRS stability, due, …) plus the computed mastery score (0–1, as /mastery shows it) and recall probability now (null for a new card).',
     {
       userId: z.string(),
       module: z.string().optional(),
@@ -66,7 +67,14 @@ export function createMcpServer() {
       validateUser(userId);
       const concepts = await getConcepts(userId, { module: moduleFilter });
       const masteryList = await getAllMastery(userId, concepts.map((c) => c.id));
-      const result = concepts.map((c, i) => ({ concept: c, mastery: masteryList[i] }));
+      const now = new Date();
+      // DEC-060 §6: computed on read, never stored (DEC-056).
+      const result = concepts.map((c, i) => ({
+        concept: c,
+        mastery: masteryList[i],
+        score: masteryScore(masteryList[i], now),
+        retrievability: retrievabilityAt(normalizeCard(masteryList[i], now), now),
+      }));
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
   );

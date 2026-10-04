@@ -55,7 +55,8 @@ export function normalizeCard(card, now = new Date()) {
 
 // Pure: one review of `card` with `grade` (1–4) at `now`. SM-2 is always updated under
 // `sm2`; FSRS only when it is the active scheduler, so a rollback never runs FSRS code.
-export function reviewCard(card, grade, now = new Date(), scheduler = schedulerName()) {
+// `retention`: the topic's desired retention (FSRS only; default 0.9).
+export function reviewCard(card, grade, now = new Date(), scheduler = schedulerName(), { retention } = {}) {
   const prev = scheduler === 'fsrs' ? normalizeCard(card, now) : card;
   const { score: _stale, ...base } = prev; // drop a score stored by older code
   const prevSm2 = sm2Of(prev);
@@ -69,7 +70,7 @@ export function reviewCard(card, grade, now = new Date(), scheduler = schedulerN
   };
   let retrievability = null;
   if (scheduler === 'fsrs') {
-    const result = reviewFsrs(prev, grade, now);
+    const result = reviewFsrs(prev, grade, now, retention);
     Object.assign(next, result.fields);
     retrievability = result.retrievability;
     next.nextReviewAt = result.fields.due;
@@ -82,9 +83,9 @@ export function reviewCard(card, grade, now = new Date(), scheduler = schedulerN
 }
 
 // Schedules one graded answer and saves the card. Returns the transition for the review event.
-export async function applyQuestionResult(userId, conceptId, grade, now = new Date()) {
+export async function applyQuestionResult(userId, conceptId, grade, now = new Date(), { retention } = {}) {
   const current = await getMastery(userId, conceptId);
-  const transition = reviewCard(current, grade, now);
+  const transition = reviewCard(current, grade, now, schedulerName(), { retention });
   await setMastery(userId, transition.next);
   return transition;
 }

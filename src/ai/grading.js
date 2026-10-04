@@ -1,4 +1,5 @@
 import { callJSON } from './anthropic.js';
+import { professorSystem } from './professor.js';
 
 const SYSTEM = `You are a strict but fair grader. Be generous with partial credit when the student demonstrates understanding despite imprecise phrasing. Return ONLY JSON. No preamble.`;
 
@@ -18,14 +19,15 @@ export function gradeMCQ(question, userAnswer) {
   };
 }
 
-export async function gradeFreeText(question, userAnswer) {
+// `spec`: the topic spec; the grader shares the question writer's cached professor prefix.
+export async function gradeFreeText(question, userAnswer, { spec = null } = {}) {
   const user = `Question: ${question.prompt}
 Expected: ${question.correctAnswer}
 Student answer: ${userAnswer}
 
 Return: { "isCorrect": bool, "score": 0.0-1.0, "feedback": "..." }`;
 
-  const result = await callJSON({ system: SYSTEM, user, max_tokens: 1024 });
+  const result = await callJSON({ system: professorSystem(spec, SYSTEM), user, max_tokens: 1024 });
   return {
     isCorrect: !!result.isCorrect,
     score: typeof result.score === 'number' ? result.score : 0,
