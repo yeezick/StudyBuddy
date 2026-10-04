@@ -95,7 +95,7 @@ export async function reviewAnswer(quiz, q) {
   let transition = null;
   if (!q.scheduled && !q.sm2Applied) {
     const now = q.answeredAt ? new Date(q.answeredAt) : new Date();
-    transition = await applyQuestionResult(quiz.userId, q.conceptId, gradeFor(q), now);
+    transition = await applyQuestionResult(quiz.userId, q.conceptId, gradeFor(q), now, { retention: quiz.retentionTarget });
     q.scheduled = true;
   }
   if (q.reviewRecorded) return;

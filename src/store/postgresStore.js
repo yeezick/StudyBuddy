@@ -15,6 +15,29 @@ function withoutNulls(obj) {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v != null));
 }
 
+// A topics row as a topic spec (lib/topicSpec.js). Template, professor and domain share the
+// `professor` jsonb; session minutes live in `schedule_prefs`. A row never given a spec (the
+// library row slice 3 created) comes back with professor and template null.
+const TOPIC_COLUMNS = `id, owner_user_id, name, goal, to_char(target_date, 'YYYY-MM-DD') AS target_date, status,
+  professor, sources, schedule_prefs`;
+
+function topicFromRow(r) {
+  const { template = null, domain = null, ...professor } = r.professor ?? {};
+  return {
+    id: r.id,
+    ownerUserId: r.owner_user_id,
+    name: r.name,
+    goal: r.goal,
+    targetDate: r.target_date,
+    template,
+    professor: r.professor ? professor : null,
+    domain,
+    sources: r.sources ?? [],
+    sessionMinutes: r.schedule_prefs?.sessionMinutes ?? null,
+    status: r.status,
+  };
+}
+
 // Records in Postgres; quizzes and the active-quiz pointer are short-lived and stay in
 // `ephemeral` (a Redis store), per DEC-047.
 export function createPostgresStore({ pool, ephemeral, migrateOnInit = true, primaryUserId = null }) {
@@ -193,6 +216,38 @@ export function createPostgresStore({ pool, ephemeral, migrateOnInit = true, pri
         [userId, limit, excludeTriggers],
       );
       return rows.map((r) => r.entry);
+    },
+
+    async getTopic(topicId) {
+      const { rows } = await pool.query(`SELECT ${TOPIC_COLUMNS} FROM topics WHERE id = $1`, [topicId]);
+      return rows[0] ? topicFromRow(rows[0]) : null;
+    },
+
+    // Upsert; a topic id owned by another user is refused.
+    async saveTopic(topic) {
+      if (!topic.ownerUserId) throw new Error('saveTopic: ownerUserId is required');
+      await ensureUser(pool, topic.ownerUserId);
+      const professor = topic.professor
+        ? { ...topic.professor, template: topic.template ?? null, domain: topic.domain ?? null }
+        : null;
+      const prefs = topic.sessionMinutes == null ? null : { sessionMinutes: topic.sessionMinutes };
+      const { rowCount } = await pool.query(
+        `INSERT INTO topics (id, owner_user_id, name, goal, target_date, status, professor, sources, schedule_prefs)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, goal = EXCLUDED.goal, target_date = EXCLUDED.target_date,
+           status = EXCLUDED.status, professor = EXCLUDED.professor, sources = EXCLUDED.sources,
+           schedule_prefs = COALESCE(topics.schedule_prefs, '{}'::jsonb) || COALESCE(EXCLUDED.schedule_prefs, '{}'::jsonb)
+         WHERE topics.owner_user_id = EXCLUDED.owner_user_id`,
+        [topic.id, topic.ownerUserId, topic.name, topic.goal ?? null, topic.targetDate ?? null, topic.status ?? 'active',
+          json(professor), json(topic.sources ?? []), json(prefs)],
+      );
+      if (rowCount === 0) throw new Error(`saveTopic: topic ${topic.id} belongs to another user`);
+      return topic;
+    },
+
+    async listTopics(userId) {
+      const { rows } = await pool.query(`SELECT ${TOPIC_COLUMNS} FROM topics WHERE owner_user_id = $1 ORDER BY created_at, id`, [userId]);
+      return rows.map(topicFromRow);
     },
 
     async getSession(userId) {

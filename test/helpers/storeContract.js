@@ -275,4 +275,35 @@ export function storeContract(name, makeStore) {
     assert.deepEqual(ids(await store.getReviewEvents('u1', { since: at(9), limit: 2 })), ['c4', 'c3']);
     assert.deepEqual(await store.getReviewEvents('u1', { topicId: 'nope' }), []);
   });
+
+  // Topic specs (T6-1): exactly what was saved comes back, on either backend.
+  const spec = (id, ownerUserId = 'u1', extra = {}) => ({
+    id, ownerUserId, name: `Topic ${id}`, goal: 'Pass the exam', targetDate: '2026-12-01', template: 'cert_exam',
+    professor: { name: 'Ada', tone: 'dry', level: 'beginner' }, domain: 'evals',
+    sources: [{ title: 'Book', ref: 'https://example.com/book' }], sessionMinutes: 25, status: 'active', ...extra,
+  });
+
+  t('topics: saved spec reads back verbatim; unknown topic is null', async () => {
+    assert.equal(await store.getTopic('evals'), null);
+    await store.saveTopic(spec('evals'));
+    assert.deepEqual(await store.getTopic('evals'), spec('evals'));
+  });
+
+  t('topics: save is an upsert, list returns the owner\'s topics only', async () => {
+    await store.saveTopic(spec('evals'));
+    await store.saveTopic(spec('wine', 'u1', { template: 'hands_on' }));
+    await store.saveTopic(spec('other', 'u2'));
+    await store.saveTopic(spec('evals', 'u1', { status: 'paused', professor: { name: 'Bo', tone: 'warm', level: 'expert' }, targetDate: null }));
+    const mine = await store.listTopics('u1');
+    assert.deepEqual(mine.map((x) => x.id).sort(), ['evals', 'wine']);
+    assert.deepEqual(mine.find((x) => x.id === 'evals'), spec('evals', 'u1', { status: 'paused', professor: { name: 'Bo', tone: 'warm', level: 'expert' }, targetDate: null }));
+    assert.deepEqual(await store.listTopics('nobody'), []);
+  });
+
+  t('topics: another user\'s topic id is refused; an owner is required', async () => {
+    await store.saveTopic(spec('evals'));
+    await assert.rejects(store.saveTopic(spec('evals', 'u2')), /belongs to another user/);
+    await assert.rejects(store.saveTopic(spec('x', null)), /ownerUserId is required/);
+    assert.equal((await store.getTopic('evals')).ownerUserId, 'u1');
+  });
 }

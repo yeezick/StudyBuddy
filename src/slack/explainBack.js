@@ -3,6 +3,7 @@ import { boltApp } from './app.js';
 import { getConcepts } from '../lib/concepts.js';
 import { gradeFreeText } from '../ai/grading.js';
 import { callJSON } from '../ai/anthropic.js';
+import { professorSystem } from '../ai/professor.js';
 import { gradeFor } from '../lib/grade.js';
 import { buildExplainBackEvent, buildExplainBackSkipEvent, latencyMs, isIdleLatency } from '../lib/reviewEvents.js';
 
@@ -16,7 +17,7 @@ export const EXPLAIN_BACK_TTL_MS = 30 * 60 * 1000;
 // The tailored question (DEC-059 §1) gets this long before the fixed template is used instead.
 export const EXPLAIN_BACK_QUESTION_TIMEOUT_MS = 5000;
 
-// `${slackUserId}:${channelId}` → { quizId, userId, trigger, conceptId, prompt, shownAt, ts }
+// `${slackUserId}:${channelId}` → { quizId, userId, trigger, conceptId, expected, spec, prompt, shownAt, ts }
 const pending = new Map();
 
 const keyFor = (slackUserId, channelId) => `${slackUserId}:${channelId}`;
@@ -46,7 +47,7 @@ const QUESTION_SYSTEM = `You write one short explain-back question for a learner
 // One short AI call writes the why-question from the concept summary and, when the learner
 // missed it, the quiz question they missed. An error, a timeout or an odd reply falls back to
 // the fixed template.
-export async function tailoredExplainBackPrompt({ name, summary, missedPrompt = null }, { timeoutMs = EXPLAIN_BACK_QUESTION_TIMEOUT_MS } = {}) {
+export async function tailoredExplainBackPrompt({ name, summary, missedPrompt = null }, { timeoutMs = EXPLAIN_BACK_QUESTION_TIMEOUT_MS, spec = null } = {}) {
   const missed = missedPrompt ? `\nThe learner just got this quiz question on it wrong: "${missedPrompt}"` : '';
   const user = `Concept: ${name}
 Summary: ${summary}${missed}
@@ -54,7 +55,7 @@ Summary: ${summary}${missed}
 Write one question that starts with "In 1–2 sentences, why" and ends with "?". At most 200 characters. Put the concept name in *single asterisks* if you use it.`;
   try {
     const reply = await callJSON({
-      system: QUESTION_SYSTEM, user, max_tokens: 200,
+      system: professorSystem(spec, QUESTION_SYSTEM), user, max_tokens: 200,
       requestOptions: { signal: AbortSignal.timeout(timeoutMs), maxRetries: 0 },
     });
     const question = typeof reply?.question === 'string' ? reply.question.trim() : '';
@@ -111,7 +112,7 @@ export async function startExplainBack(client, quiz) {
     name: concept?.name ?? weakest.conceptId,
     summary: concept?.summary ?? '',
     missedPrompt: weakest.isCorrect === false ? weakest.prompt : null,
-  });
+  }, { spec: quiz.spec });
 
   const posted = await client.chat.postMessage({
     channel: quiz.slackChannelId,
@@ -124,6 +125,7 @@ export async function startExplainBack(client, quiz) {
     trigger: quiz.trigger,
     conceptId: weakest.conceptId,
     expected: concept?.summary ?? '',
+    spec: quiz.spec ?? null,
     prompt,
     shownAt: new Date().toISOString(),
     ts: posted?.ts ?? null,
@@ -135,7 +137,7 @@ async function answerExplainBack(client, key, entry, text) {
   const answeredAt = new Date().toISOString(); // before grading, which takes seconds
   const channel = key.slice(key.indexOf(':') + 1);
 
-  const result = await gradeFreeText({ prompt: entry.prompt, correctAnswer: entry.expected }, text);
+  const result = await gradeFreeText({ prompt: entry.prompt, correctAnswer: entry.expected }, text, { spec: entry.spec });
   const pct = Math.round(result.score * 100);
   await client.chat.postMessage({
     channel,
