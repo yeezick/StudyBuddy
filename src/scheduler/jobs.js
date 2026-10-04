@@ -5,7 +5,7 @@ import { getConcepts } from '../lib/concepts.js';
 import { getAllMastery, isDue } from '../lib/mastery.js';
 import { getDMChannel } from '../slack/dm.js';
 import { startQuiz } from '../slack/quizFlow.js';
-import { buildMasterySnapshot, formatWeeklyDigestBlocks } from '../slack/masteryFlow.js';
+import { buildMasterySnapshot, formatWeeklyDigestBlocks, calibrationLine } from '../slack/masteryFlow.js';
 import { setDep } from '../lib/health.js';
 import { slackUserIdFor } from '../lib/resolveUser.js';
 
@@ -13,6 +13,7 @@ const PING_DISTRIBUTION = { mcq: 1.0 };
 const PING_COUNT = 3;
 
 const REDIS_MAX_RETRIES = 20;
+const CALIBRATION_EVENT_LIMIT = 2000; // a week of reviews, with room to spare
 
 let queue = null;
 let slackClient = null;
@@ -248,8 +249,9 @@ async function handleWeeklyDigest(job) {
 
     const quizCount = weekEntries.length;
     const conceptsTested = new Set(weekEntries.flatMap((e) => e.conceptIds ?? [])).size;
+    const calibration = calibrationLine(await store.getReviewEvents(userId, { since: cutoff, limit: CALIBRATION_EVENT_LIMIT }));
 
-    const blocks = formatWeeklyDigestBlocks(snapshot, previousSnapshot, { quizCount, conceptsTested });
+    const blocks = formatWeeklyDigestBlocks(snapshot, previousSnapshot, { quizCount, conceptsTested, calibration });
     await slackClient.chat.postMessage({
       channel: channelId,
       blocks,
@@ -315,6 +317,11 @@ export async function scheduleJob(name, data, opts = {}) {
   return requireQueue().add(name, data, { removeOnComplete: true, removeOnFail: 5, ...opts });
 }
 
+// For one-shot jobs keyed by a fixed id: while a job with that id exists, BullMQ ignores the add.
+export async function addJobOnce(name, data, opts) {
+  return requireQueue().add(name, data, { removeOnComplete: true, removeOnFail: 5, ...opts });
+}
+
 export async function removeJob(jobId) {
   const job = await requireQueue().getJob(jobId);
   if (job) await job.remove();
@@ -343,6 +350,7 @@ export async function startScheduler(client, userIds, sessionHandlers = {}) {
         case 'session-end':           return sessionHandlers.sessionEnd?.(job);
         case 'break':                 return sessionHandlers.breakEnd?.(job);
         case 'session-wrap-morning':  return sessionHandlers.wrapMorning?.(job);
+        case 'retest':                return sessionHandlers.retest?.(job);
         default:
           console.warn(`[scheduler] Unhandled job: ${job.name}`);
       }

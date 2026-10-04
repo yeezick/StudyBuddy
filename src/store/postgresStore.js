@@ -175,6 +175,7 @@ export function createPostgresStore({ pool, ephemeral, migrateOnInit = true, pri
     getActiveQuizId: ephemeral.getActiveQuizId,
     setActiveQuizId: ephemeral.setActiveQuizId,
     clearActiveQuizId: ephemeral.clearActiveQuizId,
+    claimRetest: ephemeral.claimRetest,
 
     async addHistory(userId, entry) {
       await ensureUser(pool, userId);

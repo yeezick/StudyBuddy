@@ -82,6 +82,25 @@ export function formatMasteryBlocks(snapshot) {
   return blocks;
 }
 
+// Calibration (DEC-058 §3): how often answers at each confidence level were right, from the
+// review events of the last 7 days. Explain-backs and answers without a confidence tap are
+// left out; a level with no answers is omitted, and the whole line when fewer than 5 count.
+export const CALIBRATION_MIN_N = 5;
+const CALIBRATION_LEVELS = [[1, 'Guess'], [2, 'Medium'], [3, 'Sure']];
+
+export function calibrationLine(events) {
+  const rated = events.filter((e) => e.itemType !== 'explain_back' && [1, 2, 3].includes(e.confidence) && typeof e.correct === 'boolean');
+  if (rated.length < CALIBRATION_MIN_N) return null;
+  const parts = [];
+  for (const [level, label] of CALIBRATION_LEVELS) {
+    const atLevel = rated.filter((e) => e.confidence === level);
+    if (atLevel.length === 0) continue;
+    const pct = Math.round((atLevel.filter((e) => e.correct).length / atLevel.length) * 100);
+    parts.push(`${label} ${pct}%${parts.length === 0 ? ' right' : ''} (${atLevel.length})`);
+  }
+  return `Calibration (7 days): ${parts.join(' \u00b7 ')}`;
+}
+
 // previousSnapshot: { modules: [{ name, avg }] } from mastery-snapshot Redis key 7 days ago
 export function formatWeeklyDigestBlocks(snapshot, previousSnapshot, weekStats) {
   const { courseName, modules, dueToday } = snapshot;
@@ -125,6 +144,9 @@ export function formatWeeklyDigestBlocks(snapshot, previousSnapshot, weekStats) 
         text: `This week: ${quizCount} quiz${quizCount !== 1 ? 'zes' : ''} \u00b7 ${conceptsTested} concepts tested`,
       },
     });
+    if (weekStats.calibration) {
+      blocks.push({ type: 'section', text: { type: 'mrkdwn', text: weekStats.calibration } });
+    }
   }
 
   blocks.push({
