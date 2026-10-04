@@ -8,11 +8,12 @@ An AI-powered study partner that lives in your Slack. It quizzes you on your own
 
 ## What it does
 
-- **On-demand quizzes** via slash commands — scope by module, lesson, or free-form learning objective
+- **On-demand quizzes** via slash commands — scope by module, lesson, or free-form learning objective; the first question shows in seconds while the rest are written in the background
+- **Confidence before grading** — every answer is tagged Guess / Medium / Sure
 - **Spaced repetition** using FSRS (the scheduler in modern Anki) — concepts you struggle with resurface sooner, mastery scores adjust automatically
 - **Mastery tracking** per concept, persisted in Redis — snapshot on demand or receive a weekly digest every Sunday
 - **Confident-miss re-checks** — a wrong answer you were sure about comes back as one new question by DM ~10 min after the quiz (max 3 a day)
-- **Explain-back** — after each quiz, an optional "in 1–2 sentences, why…?" prompt on your weakest concept, AI-graded; the weekly digest adds a calibration line (how often you were right at each confidence level)
+- **Explain-back** — after each quiz, an optional "in 1–2 sentences, why…?" prompt on your weakest concept, written for that concept (and the question you missed), AI-graded; skips are logged too. The weekly digest adds a calibration line (how often you were right at each confidence level)
 - **Scheduled quiz pings** — the bot DMs you quizzes during your configured study window without you having to initiate
 - **Study session management** — timed segments with synthesis warnings, active recall prompts, dynamic break detection, and a wrap-up quiz offer
 - **Content-agnostic** — works with any subject matter you can describe in a concept library

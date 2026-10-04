@@ -2,21 +2,10 @@ import './helpers/env.js';
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { stubRedis } from './helpers/fakeRedis.js';
+import { stubAnthropic } from './helpers/anthropicStub.js';
 
-// Same Anthropic stub as reviewEvents.test.js: installed before the app modules load; each
-// call takes the next queued JSON reply.
-const anthropicReplies = [];
-const realFetch = globalThis.fetch;
-globalThis.fetch = async (url, init) => {
-  if (!String(url).startsWith('https://api.anthropic.com')) return realFetch(url, init);
-  if (anthropicReplies.length === 0) throw new Error('test: unexpected Anthropic call');
-  const message = {
-    id: 'msg_test', type: 'message', role: 'assistant', model: 'test-model',
-    content: [{ type: 'text', text: JSON.stringify(anthropicReplies.shift()) }],
-    stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 },
-  };
-  return new Response(JSON.stringify(message), { status: 200, headers: { 'content-type': 'application/json' } });
-};
+// Installed before the app modules load; see helpers/anthropicStub.js.
+const { replies: anthropicReplies, requests: anthropicRequests } = stubAnthropic();
 
 const { store } = await import('../src/store/index.js');
 const { startQuiz, cancelQuiz, pendingQuizReply, onQuizConfidence, onQuizAnswer, onFreeTextConfidence, onQuizEnd } =
@@ -313,7 +302,7 @@ test('T5-2: no explain-back on cancel', async () => {
   assert.equal(pendingExplainBack(SLACK_USER, CHANNEL), null);
 });
 
-test('T5-2: Skip closes the prompt; the next message goes to break detection, nothing is logged', async () => {
+test('T5-2: Skip closes the prompt; the next message goes to break detection', async () => {
   const { client, updated } = fakeClient();
   anthropicReplies.push([mcq('c1', 'B')]);
   const quiz = await startQuiz(client, USER, SLACK_USER, CHANNEL, {}, { concepts: CONCEPTS, count: 1 });
@@ -328,7 +317,7 @@ test('T5-2: Skip closes the prompt; the next message goes to break detection, no
     hasExplainReply: () => Boolean(pendingExplainBack(SLACK_USER, CHANNEL)),
     hasSessionReply: () => false,
   }), 'break');
-  assert.equal((await store.getReviewEvents(USER)).length, 1, 'only the answer');
+  assert.equal((await store.getReviewEvents(USER)).length, 2, 'the answer + the skip (T5b-4)');
 });
 
 test('T5-2: an unanswered prompt expires; a new quiz takes the channel back', async () => {

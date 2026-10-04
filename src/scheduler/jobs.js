@@ -1,6 +1,7 @@
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { store } from '../store/index.js';
+import { QUIZZES_ONLY } from '../lib/retest.js';
 import { getConcepts } from '../lib/concepts.js';
 import { getAllMastery, isDue } from '../lib/mastery.js';
 import { getDMChannel } from '../slack/dm.js';
@@ -225,6 +226,18 @@ async function handlePing(job) {
   await schedulePing(userId);
 }
 
+// The digest's last-7-days line: quizzes from history (retests left out, DEC-059 §5) and the
+// calibration line from review events (retests included).
+export async function weekStats(userId, now = Date.now()) {
+  const cutoff = new Date(now - 7 * 86400000).toISOString();
+  const weekEntries = (await store.getHistory(userId, 30, QUIZZES_ONLY)).filter((e) => e.completedAt >= cutoff);
+  return {
+    quizCount: weekEntries.length,
+    conceptsTested: new Set(weekEntries.flatMap((e) => e.conceptIds ?? [])).size,
+    calibration: calibrationLine(await store.getReviewEvents(userId, { since: cutoff, limit: CALIBRATION_EVENT_LIMIT })),
+  };
+}
+
 async function handleWeeklyDigest(job) {
   const { userId } = job.data;
   try {
@@ -243,15 +256,7 @@ async function handleWeeklyDigest(job) {
       .slice(0, 10);
     const previousSnapshot = await store.getMasterySnapshot(userId, sevenDaysAgo);
 
-    // Weekly stats from history
-    const cutoff = new Date(Date.now() - 7 * 86400000).toISOString();
-    const weekEntries = (await store.getHistory(userId, 30)).filter((e) => e.completedAt >= cutoff);
-
-    const quizCount = weekEntries.length;
-    const conceptsTested = new Set(weekEntries.flatMap((e) => e.conceptIds ?? [])).size;
-    const calibration = calibrationLine(await store.getReviewEvents(userId, { since: cutoff, limit: CALIBRATION_EVENT_LIMIT }));
-
-    const blocks = formatWeeklyDigestBlocks(snapshot, previousSnapshot, { quizCount, conceptsTested, calibration });
+    const blocks = formatWeeklyDigestBlocks(snapshot, previousSnapshot, await weekStats(userId));
     await slackClient.chat.postMessage({
       channel: channelId,
       blocks,
