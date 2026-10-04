@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { store } from '../store/index.js';
 import { boltApp } from './app.js';
-import { getConcepts } from '../lib/concepts.js';
+import { getTopicConcepts } from '../lib/concepts.js';
 import { generateQuestions, streamQuestion, leadType, appendInterleaved } from '../ai/questionGen.js';
 import { gradeMCQ, gradeFreeText } from '../ai/grading.js';
 import { matchConceptsToPrompt } from '../ai/conceptMatch.js';
@@ -291,7 +291,7 @@ async function completeQuiz(client, quiz) {
     await reviewAnswer(quiz, q);
   }
 
-  const concepts = await getConcepts(userId);
+  const concepts = await getTopicConcepts(userId, quiz.topicId ?? DEFAULT_TOPIC_ID);
   const conceptMap = Object.fromEntries(concepts.map((c) => [c.id, c]));
 
   const correctQs = answered.filter((q) => q.isCorrect);
@@ -447,16 +447,23 @@ export function sampleType(distribution, random = Math.random) {
   return entries.at(-1)[0];
 }
 
-async function selectConcepts(userId, input) {
+async function selectConcepts(userId, input, topicId) {
   if (input.mode === 'free_form_prompt') {
-    const all = await getConcepts(userId);
+    const all = await getTopicConcepts(userId, topicId);
+    if (!all.length) return all;
     const ids = await matchConceptsToPrompt(input.freeFormPrompt, all);
     return all.filter((c) => ids.includes(c.id));
   }
   if (input.mode === 'scope') {
-    return getConcepts(userId, input.scope);
+    return getTopicConcepts(userId, topicId, input.scope);
   }
-  return getConcepts(userId);
+  return getTopicConcepts(userId, topicId);
+}
+
+// A topic with no concepts yet: its professor asks for sources (ingest is slice 11).
+export function sourcesNeededText(spec) {
+  return `\u{1F4DA} I'm ${spec.professor.name}, your professor for *${spec.name}*. I don't have any material for this topic yet \u2014 `
+    + 'add its concepts first (MCP `add_concepts` with this topic id), then run `/quizinit` here.';
 }
 
 export async function cancelQuiz(userId) {
@@ -501,11 +508,12 @@ export async function startQuiz(client, userId, slackUserId, channelId, input, o
 
   // Concepts still come from the user's library; the topic sets the professor (T6-1).
   const spec = await getTopicSpec(store, topicId);
-  const concepts = conceptsOverride ?? await selectConcepts(userId, input);
+  const concepts = conceptsOverride ?? await selectConcepts(userId, input, spec.id);
   if (concepts.length === 0) {
+    const empty = !conceptsOverride && (await getTopicConcepts(userId, spec.id)).length === 0;
     await client.chat.postMessage({
       channel: channelId,
-      text: 'No concepts found for that scope. Try `/quizinit` without arguments to quiz on all concepts.',
+      text: empty ? sourcesNeededText(spec) : 'No concepts found for that scope. Try `/quizinit` without arguments to quiz on all concepts.',
     });
     return null;
   }

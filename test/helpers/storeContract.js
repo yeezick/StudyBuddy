@@ -280,7 +280,7 @@ export function storeContract(name, makeStore) {
   const spec = (id, ownerUserId = 'u1', extra = {}) => ({
     id, ownerUserId, name: `Topic ${id}`, goal: 'Pass the exam', targetDate: '2026-12-01', template: 'cert_exam',
     professor: { name: 'Ada', tone: 'dry', level: 'beginner' }, domain: 'evals',
-    sources: [{ title: 'Book', ref: 'https://example.com/book' }], sessionMinutes: 25, status: 'active', ...extra,
+    sources: [{ title: 'Book', ref: 'https://example.com/book' }], sessionMinutes: 25, status: 'active', slackChannelId: null, ...extra,
   });
 
   t('topics: saved spec reads back verbatim; unknown topic is null', async () => {
@@ -305,5 +305,24 @@ export function storeContract(name, makeStore) {
     await assert.rejects(store.saveTopic(spec('evals', 'u2')), /belongs to another user/);
     await assert.rejects(store.saveTopic(spec('x', null)), /ownerUserId is required/);
     assert.equal((await store.getTopic('evals')).ownerUserId, 'u1');
+  });
+
+  t('topics: a channel maps to one topic; moving it frees the old channel', async () => {
+    assert.equal(await store.getTopicByChannel('C1'), null);
+    await store.saveTopic(spec('evals', 'u1', { slackChannelId: 'C1' }));
+    assert.equal((await store.getTopicByChannel('C1')).id, 'evals');
+    await assert.rejects(store.saveTopic(spec('wine', 'u1', { slackChannelId: 'C1' })));
+    await store.saveTopic(spec('evals', 'u1', { slackChannelId: 'C2' }));
+    assert.equal(await store.getTopicByChannel('C1'), null);
+    assert.equal((await store.getTopicByChannel('C2')).id, 'evals');
+  });
+
+  t('topics: a new topic has no concepts; the library topic reads the user\'s library', async () => {
+    await store.seedConcepts('u1', [concept('c1')]);
+    await store.saveTopic(spec('evals'));
+    assert.deepEqual(await store.getTopicConcepts('u1', 'evals'), []);
+    const [library] = (await store.listTopics('u1')).filter((x) => x.id !== 'evals');
+    const libraryId = library?.id ?? 'u1-library'; // Redis keeps no library row
+    assert.deepEqual((await store.getTopicConcepts('u1', libraryId)).map((c) => c.id), ['c1']);
   });
 }

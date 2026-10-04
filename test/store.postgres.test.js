@@ -50,7 +50,7 @@ if (!testDbEnabled()) {
   test('[postgres] migrations are recorded and re-running applies nothing', async () => {
     assert.deepEqual(await migrate(pool, { log: () => {} }), []);
     const { rows } = await pool.query('SELECT version FROM schema_migrations ORDER BY version');
-    assert.deepEqual(rows.map((r) => r.version), ['001_init']);
+    assert.deepEqual(rows.map((r) => r.version), ['001_init', '002_topic_channel']);
   });
 
   test('[postgres] concepts use {topicId}:{localId} ids and record provenance; cards carry due', async () => {
@@ -113,7 +113,7 @@ if (!testDbEnabled()) {
     assert.equal(row.professor, null);
     assert.equal(row.template, null);
     const spec = await getTopicSpec(store, DEFAULT_TOPIC_ID);
-    assert.deepEqual({ ...spec, ownerUserId: null }, { ...AI_PM_SPEC, professor: { ...AI_PM_SPEC.professor }, sources: [...AI_PM_SPEC.sources], ownerUserId: null });
+    assert.deepEqual({ ...spec, ownerUserId: null }, { ...AI_PM_SPEC, professor: { ...AI_PM_SPEC.professor }, sources: [...AI_PM_SPEC.sources], ownerUserId: null, slackChannelId: null });
     assert.equal(spec.ownerUserId, 'owner');
 
     await store.saveTopic({ ...spec, professor: { ...spec.professor, name: 'Dr. PM' } });

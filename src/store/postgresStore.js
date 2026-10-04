@@ -19,7 +19,7 @@ function withoutNulls(obj) {
 // `professor` jsonb; session minutes live in `schedule_prefs`. A row never given a spec (the
 // library row slice 3 created) comes back with professor and template null.
 const TOPIC_COLUMNS = `id, owner_user_id, name, goal, to_char(target_date, 'YYYY-MM-DD') AS target_date, status,
-  professor, sources, schedule_prefs`;
+  professor, sources, schedule_prefs, slack_channel_id`;
 
 function topicFromRow(r) {
   const { template = null, domain = null, ...professor } = r.professor ?? {};
@@ -35,6 +35,7 @@ function topicFromRow(r) {
     sources: r.sources ?? [],
     sessionMinutes: r.schedule_prefs?.sessionMinutes ?? null,
     status: r.status,
+    slackChannelId: r.slack_channel_id,
   };
 }
 
@@ -232,17 +233,33 @@ export function createPostgresStore({ pool, ephemeral, migrateOnInit = true, pri
         : null;
       const prefs = topic.sessionMinutes == null ? null : { sessionMinutes: topic.sessionMinutes };
       const { rowCount } = await pool.query(
-        `INSERT INTO topics (id, owner_user_id, name, goal, target_date, status, professor, sources, schedule_prefs)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `INSERT INTO topics (id, owner_user_id, name, goal, target_date, status, professor, sources, schedule_prefs, slack_channel_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, goal = EXCLUDED.goal, target_date = EXCLUDED.target_date,
            status = EXCLUDED.status, professor = EXCLUDED.professor, sources = EXCLUDED.sources,
+           slack_channel_id = EXCLUDED.slack_channel_id,
            schedule_prefs = COALESCE(topics.schedule_prefs, '{}'::jsonb) || COALESCE(EXCLUDED.schedule_prefs, '{}'::jsonb)
          WHERE topics.owner_user_id = EXCLUDED.owner_user_id`,
         [topic.id, topic.ownerUserId, topic.name, topic.goal ?? null, topic.targetDate ?? null, topic.status ?? 'active',
-          json(professor), json(topic.sources ?? []), json(prefs)],
+          json(professor), json(topic.sources ?? []), json(prefs), topic.slackChannelId ?? null],
       );
       if (rowCount === 0) throw new Error(`saveTopic: topic ${topic.id} belongs to another user`);
       return topic;
+    },
+
+    async getTopicByChannel(channelId) {
+      const { rows } = await pool.query(`SELECT ${TOPIC_COLUMNS} FROM topics WHERE slack_channel_id = $1`, [channelId]);
+      return rows[0] ? topicFromRow(rows[0]) : null;
+    },
+
+    // A topic's concepts in library order; the user's library topic is getConcepts(userId).
+    async getTopicConcepts(userId, topicId) {
+      const { rows } = await pool.query(
+        `SELECT c.data FROM concepts c JOIN topics t ON t.id = c.topic_id
+          WHERE c.topic_id = $1 AND t.owner_user_id = $2 ORDER BY c.position`,
+        [topicId, userId],
+      );
+      return rows.map((r) => r.data);
     },
 
     async listTopics(userId) {

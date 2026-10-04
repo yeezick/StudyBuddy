@@ -21,6 +21,7 @@ import {
 import { registerMessageRouter } from './slack/messageRouter.js';
 import { registerExplainBackHandlers } from './slack/explainBack.js';
 import { registerRetestFlow, handleRetestJob } from './slack/retestFlow.js';
+import { registerHomeHandlers } from './slack/homeFlow.js';
 import { startScheduler } from './scheduler/jobs.js';
 import { mountMcp } from './mcp/server.js';
 
@@ -56,6 +57,7 @@ registerQuizHandlers();
 registerSessionHandlers();
 registerExplainBackHandlers();
 registerRetestFlow();
+registerHomeHandlers();
 registerMessageRouter();
 
 // Slack and BullMQ connect after the port is bound, so /health answers even if they are slow or down.

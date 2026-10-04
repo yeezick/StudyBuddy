@@ -253,6 +253,8 @@ Each topic has a professor spec: name, goal, target date, template, professor na
 
 Question writing, answer keys, grading and explain-back all send the same per-topic professor prefix first, marked for prompt caching (`src/ai/professor.js`). Every professor answers from the topic's sources and answer key and marks unsupported claims "unverified". Quizzes run on topic `ai-pm` unless a `topicId` is given. A topic with no stored professor uses the built-in ai-pm spec, so an existing deployment behaves as before.
 
+The bot's **Home tab** is the control panel. It shows today's due reviews across active topics with a Start button, plus each topic's status, due count, mastery and exam date. Its buttons are New topic, Edit professor, Pause/Resume, Archive/Restore and Create channel. A new topic gets a private channel `#study-<slug>` with the professor's intro, and `/quizinit` in that channel quizzes on that topic. The DM keeps quizzing `ai-pm`. All of this needs the Home tab, the `groups:write`, `groups:history` and `chat:write.customize` scopes, and the `app_home_opened` and `message.groups` events from `spec/slack-manifest.yaml`. Without them, Home still renders and channel creation says which permission is missing.
+
 ---
 
 ## Roadmap

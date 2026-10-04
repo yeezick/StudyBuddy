@@ -22,6 +22,8 @@ const keys = {
   retests: (userId, day) => `retests:${userId}:${day}`,
   topic: (topicId) => `topic:${topicId}`,
   topicIds: (userId) => `topic-ids:${userId}`,
+  topicChannel: (channelId) => `topic-channel:${channelId}`,
+  topicConcepts: (userId, topicId) => `concepts:${userId}:${topicId}`,
 };
 
 const RETEST_KEY_TTL_S = 2 * 24 * 60 * 60;
@@ -103,10 +105,28 @@ export function createRedisStore({ redis, primaryUserId = null }) {
       if (!topic.ownerUserId) throw new Error('saveTopic: ownerUserId is required');
       const prev = parse(await redis.get(keys.topic(topic.id)));
       if (prev && prev.ownerUserId !== topic.ownerUserId) throw new Error(`saveTopic: topic ${topic.id} belongs to another user`);
+      if (topic.slackChannelId) {
+        const holder = parse(await redis.get(keys.topicChannel(topic.slackChannelId)))?.topicId;
+        if (holder && holder !== topic.id) throw new Error(`saveTopic: channel ${topic.slackChannelId} already belongs to topic ${holder}`);
+      }
       await redis.set(keys.topic(topic.id), JSON.stringify(topic));
+      if (prev?.slackChannelId && prev.slackChannelId !== topic.slackChannelId) await redis.del(keys.topicChannel(prev.slackChannelId));
+      // An object, not a bare string: Upstash would hand a JSON string back already parsed.
+      if (topic.slackChannelId) await redis.set(keys.topicChannel(topic.slackChannelId), JSON.stringify({ topicId: topic.id }));
       const ids = parse(await redis.get(keys.topicIds(topic.ownerUserId))) ?? [];
       if (!ids.includes(topic.id)) await redis.set(keys.topicIds(topic.ownerUserId), JSON.stringify([...ids, topic.id]));
       return topic;
+    },
+
+    async getTopicByChannel(channelId) {
+      const topicId = parse(await redis.get(keys.topicChannel(channelId)))?.topicId;
+      return topicId ? parse(await redis.get(keys.topic(topicId))) : null;
+    },
+
+    // A topic's concepts in library order; the user's library topic is getConcepts(userId).
+    async getTopicConcepts(userId, topicId) {
+      if (topicId === libraryTopicId(userId, primaryUserId)) return getConcepts(userId);
+      return parse(await redis.get(keys.topicConcepts(userId, topicId))) ?? [];
     },
 
     async listTopics(userId) {
