@@ -33,8 +33,16 @@ export async function seedIfEmpty(userId) {
   return { seeded: true, count: seed.length };
 }
 
-export async function getConcepts(userId, { module: moduleFilter, lesson } = {}) {
-  const concepts = await store.getConcepts(userId);
+export async function getConcepts(userId, filters = {}) {
+  return filterConcepts(await store.getConcepts(userId), filters);
+}
+
+// One topic's concepts (the user's library topic reads the library), same filters.
+export async function getTopicConcepts(userId, topicId, filters = {}) {
+  return filterConcepts(await store.getTopicConcepts(userId, topicId), filters);
+}
+
+function filterConcepts(concepts, { module: moduleFilter, lesson } = {}) {
   if (!moduleFilter && !lesson) return concepts;
   return concepts.filter((c) => {
     if (moduleFilter && c.scope?.module !== moduleFilter) return false;

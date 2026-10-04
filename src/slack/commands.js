@@ -3,6 +3,7 @@ import { startQuiz, cancelQuiz } from './quizFlow.js';
 import { postMasterySnapshot } from './masteryFlow.js';
 import { postBrief } from './briefFlow.js';
 import { startSession, endSession } from './sessionFlow.js';
+import { topicForChannel } from '../lib/topics.js';
 
 function parseQuizArgs(text) {
   const trimmed = (text ?? '').trim();
@@ -55,7 +56,9 @@ export function registerCommands() {
 
     const { userId } = context;
     try {
-      await startQuiz(client, userId, command.user_id, command.channel_id, parsed, { requestedAt });
+      // In a topic's channel the quiz runs on that topic; anywhere else (the DM) on ai-pm.
+      const topic = await topicForChannel(command.channel_id);
+      await startQuiz(client, userId, command.user_id, command.channel_id, parsed, { requestedAt, ...(topic && { topicId: topic.id }) });
     } catch (err) {
       console.error(`[quizinit] startQuiz failed | userId=${userId} | ${err.message}`);
       await client.chat.postMessage({

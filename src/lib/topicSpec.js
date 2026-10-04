@@ -6,7 +6,7 @@ import { TEMPLATES, DEFAULT_TEMPLATE_ID } from './templates.js';
 // its `professor` jsonb, session minutes in `schedule_prefs`.
 //
 //   { id, ownerUserId, name, goal, targetDate, template, professor: { name, tone, level },
-//     domain, sources: [{ title, ref }], sessionMinutes, status }
+//     domain, sources: [{ title, ref }], sessionMinutes, status, slackChannelId }
 //
 // `domain` is the field questions draw their scenarios from ("realistic {domain} context").
 
@@ -47,6 +47,7 @@ export function normalizeSpec(input = {}) {
     sources: [...pick('sources', [])],
     sessionMinutes: pick('sessionMinutes', 20),
     status,
+    slackChannelId: input.slackChannelId ?? null,
   };
 }
 
@@ -55,6 +56,8 @@ export function normalizeSpec(input = {}) {
 // module stays free of import-time side effects (the AI layer imports it).
 export async function getTopicSpec(store, topicId = DEFAULT_TOPIC_ID) {
   const stored = await store.getTopic(topicId);
-  if (!stored || !stored.professor) return normalizeSpec({ id: topicId, ownerUserId: stored?.ownerUserId, status: stored?.status });
+  if (!stored || !stored.professor) {
+    return normalizeSpec({ id: topicId, ownerUserId: stored?.ownerUserId, status: stored?.status, slackChannelId: stored?.slackChannelId });
+  }
   return normalizeSpec(stored);
 }

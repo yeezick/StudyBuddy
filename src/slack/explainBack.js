@@ -1,6 +1,7 @@
 import { store } from '../store/index.js';
 import { boltApp } from './app.js';
-import { getConcepts } from '../lib/concepts.js';
+import { getTopicConcepts } from '../lib/concepts.js';
+import { DEFAULT_TOPIC_ID } from '../store/topics.js';
 import { gradeFreeText } from '../ai/grading.js';
 import { callJSON } from '../ai/anthropic.js';
 import { professorSystem } from '../ai/professor.js';
@@ -106,7 +107,7 @@ export function clearExplainBack(slackUserId, channelId) {
 export async function startExplainBack(client, quiz) {
   const weakest = pickWeakest(quiz.questions);
   if (!weakest) return;
-  const concepts = await getConcepts(quiz.userId);
+  const concepts = await getTopicConcepts(quiz.userId, quiz.topicId ?? DEFAULT_TOPIC_ID);
   const concept = concepts.find((c) => c.id === weakest.conceptId);
   const prompt = await tailoredExplainBackPrompt({
     name: concept?.name ?? weakest.conceptId,
